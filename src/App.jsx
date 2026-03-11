@@ -14,12 +14,13 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 // 1. INISIALISASI FIREBASE (DATABASE & AUTH)
 // ==========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyBxxxxxxx-xxxxxxxxxxxx",
-  authDomain: "nama-project-anda.firebaseapp.com",
-  projectId: "nama-project-anda",
-  storageBucket: "nama-project-anda.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdefg"
+  apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
+  authDomain: "memberarea-websiteku.firebaseapp.com",
+  projectId: "memberarea-websiteku",
+  storageBucket: "memberarea-websiteku.firebasestorage.app",
+  messagingSenderId: "9418923099",
+  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+  measurementId: "G-RQBKYLD4K5"
 };
 
 const app = initializeApp(firebaseConfig);
