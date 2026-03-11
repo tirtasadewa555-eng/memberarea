@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut,
+  signInWithCustomToken
+} from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // ==========================================
-// 1. INISIALISASI FIREBASE YANG AMAN
+// 1. INISIALISASI FIREBASE (DATABASE & AUTH)
 // ==========================================
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "demo-key",
@@ -24,25 +31,24 @@ export default function App() {
   // State Autentikasi & Data
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingInit, setLoadingInit] = useState(true);
+  const [loadingAuth, setLoadingAuth] = useState(false);
   
   // State UI
-  const [showLogin, setShowLogin] = useState(true);
-  const [activeTab, setActiveTab] = useState('home'); // home, files, profile
+  const [authMode, setAuthMode] = useState('login'); // 'login' atau 'register'
+  const [activeTab, setActiveTab] = useState('home'); 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
-  // State Form Profile
-  const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-
-  // Form Login
+  // Form Profile & Auth
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [phone, setPhone] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Dummy Data Produk Download
+  // Data Produk Download
   const availableFiles = [
     { id: 1, name: 'Ebook Panduan Setup Website (PDF)', size: '2.4 MB', reqLevel: 1, reqLevelName: 'Personal', url: '#' },
     { id: 2, name: 'Plugin Optimasi Kecepatan Premium (ZIP)', size: '15 MB', reqLevel: 2, reqLevelName: 'Bisnis', url: '#' },
@@ -63,32 +69,43 @@ export default function App() {
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
   };
 
+  // Menerjemahkan Error Firebase ke Bahasa Indonesia
+  const translateError = (errorCode) => {
+    switch(errorCode) {
+      case 'auth/email-already-in-use': return 'Email ini sudah terdaftar. Silakan masuk (login).';
+      case 'auth/invalid-email': return 'Format email tidak valid.';
+      case 'auth/weak-password': return 'Password terlalu lemah. Minimal 6 karakter.';
+      case 'auth/user-not-found': return 'Akun tidak ditemukan. Silakan daftar terlebih dahulu.';
+      case 'auth/wrong-password': return 'Password salah. Silakan coba lagi.';
+      case 'auth/invalid-credential': return 'Email atau password salah.';
+      default: return 'Terjadi kesalahan sistem. Coba lagi nanti.';
+    }
+  };
+
   // ==========================================
-  // 2. LOGIKA AUTENTIKASI & DATABASE
+  // 2. LOGIKA AUTENTIKASI (LOGIN & REGISTER)
   // ==========================================
   useEffect(() => {
+    // Cek jika ada token dari environment (opsional/sandbox)
     const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (error) {
-        console.error("Auth Error:", error);
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        try { await signInWithCustomToken(auth, __initial_auth_token); } 
+        catch (e) { console.error(e); }
       }
     };
     initAuth();
 
+    // Pantau status login
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setLoading(false);
+      setLoadingInit(false);
     });
     return () => unsubscribe();
   }, []);
 
+  // Tarik data profil dari database jika user sudah login
   useEffect(() => {
-    if (!user || showLogin) return;
+    if (!user) return;
 
     const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
     const unsubscribe = onSnapshot(
@@ -97,49 +114,62 @@ export default function App() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setUserData(data);
-          setEditName(data.name || '');
-          setEditPhone(data.phone || '');
-        } else {
-          const initialData = { 
-            name: 'Member Premium', 
-            email: user.email || 'guest@member.com',
-            phone: '',
-            subscriptionLevel: 1, 
-            joinDate: new Date().toISOString()
-          };
-          setDoc(userRef, initialData, { merge: true });
-          setUserData(initialData);
-          setEditName(initialData.name);
+          setName(data.name || '');
+          setPhone(data.phone || '');
         }
       },
       (error) => {
-        console.error("Firestore Listen Error:", error);
-        setUserData({ name: 'Demo Member', subscriptionLevel: 1 });
+        console.error("Gagal menarik data profil:", error);
       }
     );
     return () => unsubscribe();
-  }, [user, showLogin]);
+  }, [user]);
 
-  // ==========================================
-  // 3. HANDLER FUNGSI-FUNGSI
-  // ==========================================
-  const handleLogin = (e) => {
+  // Fungsi Register & Login
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    setLoginError('');
-    if (email.includes('@') && password.length >= 6) {
-      setShowLogin(false);
-      showToast('Login berhasil! Selamat datang.', 'success');
-    } else {
-      setLoginError('Email harus valid dan password minimal 6 karakter.');
+    setAuthError('');
+    setLoadingAuth(true);
+
+    try {
+      if (authMode === 'register') {
+        // 1. Buat Akun di Firebase Auth
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        
+        // 2. Simpan Data Profil ke Database Firestore
+        const userRef = doc(db, 'artifacts', appId, 'users', userCredential.user.uid, 'profile', 'data');
+        await setDoc(userRef, {
+          name: name,
+          email: email,
+          phone: '',
+          subscriptionLevel: 0, // Level 0 = Belum Beli (Gratis)
+          joinDate: new Date().toISOString()
+        });
+        
+        showToast('Pendaftaran berhasil! Selamat datang.', 'success');
+      } else {
+        // Proses Login
+        await signInWithEmailAndPassword(auth, email, password);
+        showToast('Berhasil masuk ke Dashboard!', 'success');
+      }
+    } catch (error) {
+      console.error("Auth Error:", error);
+      setAuthError(translateError(error.code));
     }
+    
+    setLoadingAuth(false);
   };
 
-  const handleLogout = () => {
-    setShowLogin(true);
-    setActiveTab('home');
-    setEmail('');
-    setPassword('');
-    showToast('Anda telah keluar dari sistem.', 'success');
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUserData(null);
+      setEmail('');
+      setPassword('');
+      showToast('Anda telah keluar dari sistem.', 'success');
+    } catch (error) {
+      console.error("Logout Error:", error);
+    }
   };
 
   const handleSaveProfile = async (e) => {
@@ -148,7 +178,7 @@ export default function App() {
     setIsSaving(true);
     try {
       const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
-      await setDoc(userRef, { name: editName, phone: editPhone }, { merge: true });
+      await setDoc(userRef, { name: name, phone: phone }, { merge: true });
       showToast('Profil berhasil diperbarui!', 'success');
     } catch (error) {
       showToast('Gagal menyimpan profil.', 'error');
@@ -156,21 +186,22 @@ export default function App() {
     setIsSaving(false);
   };
 
+  // Fungsi Simulasi (Hanya untuk keperluan demo agar Anda bisa test levelnya)
   const simulateUpgrade = async (newLevel) => {
     if (!user) return;
     try {
       const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
       await setDoc(userRef, { subscriptionLevel: newLevel }, { merge: true });
-      showToast(`Paket berhasil diupgrade ke ${levelNames[newLevel]}!`, 'success');
+      showToast(`Berhasil upgrade ke ${levelNames[newLevel]}!`, 'success');
     } catch (error) {
       showToast('Gagal mengubah paket.', 'error');
     }
   };
 
   // ==========================================
-  // 4. RENDER KOMPONEN UI
+  // 3. TAMPILAN ANTARMUKA (UI)
   // ==========================================
-  if (loading) {
+  if (loadingInit) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600"></div>
@@ -178,8 +209,8 @@ export default function App() {
     );
   }
 
-  // Laman Login
-  if (showLogin) {
+  // Laman Autentikasi (Jika belum login)
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 font-['Plus_Jakarta_Sans'] p-4">
         <div className="max-w-4xl w-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row">
@@ -208,18 +239,42 @@ export default function App() {
             </div>
           </div>
 
-          {/* Sisi Kanan - Form */}
+          {/* Sisi Kanan - Form Login/Register */}
           <div className="md:w-7/12 p-8 md:p-12 lg:p-16 flex flex-col justify-center bg-white relative">
             <div className="md:hidden text-center mb-8">
               <h1 className="text-3xl font-black font-['Outfit'] text-indigo-600 tracking-tight">MemberArea<span className="text-amber-400">.</span></h1>
             </div>
             
             <div className="mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold text-slate-800 mb-2 font-['Outfit']">Selamat Datang Kembali</h2>
-              <p className="text-slate-500">Silakan masuk menggunakan email terdaftar Anda.</p>
+              <h2 className="text-2xl md:text-3xl font-bold text-slate-800 mb-2 font-['Outfit']">
+                {authMode === 'login' ? 'Selamat Datang Kembali' : 'Buat Akun Baru'}
+              </h2>
+              <p className="text-slate-500">
+                {authMode === 'login' ? 'Silakan masuk menggunakan email Anda.' : 'Daftarkan diri Anda untuk mengakses produk.'}
+              </p>
             </div>
             
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={handleAuthSubmit} className="space-y-5">
+              {/* Field Nama hanya muncul saat mode Register */}
+              {authMode === 'register' && (
+                <div className="animate-fadeIn">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Nama Lengkap</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-3.5 text-slate-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
+                    </span>
+                    <input 
+                      type="text" 
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                      placeholder="Nama Anda"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Alamat Email</label>
                 <div className="relative">
@@ -232,6 +287,7 @@ export default function App() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
                     placeholder="nama@email.com"
+                    required
                   />
                 </div>
               </div>
@@ -239,7 +295,9 @@ export default function App() {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-sm font-semibold text-slate-700">Password</label>
-                  <a href="#" className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Lupa password?</a>
+                  {authMode === 'login' && (
+                    <a href="#" className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Lupa password?</a>
+                  )}
                 </div>
                 <div className="relative">
                   <span className="absolute left-4 top-3.5 text-slate-400">
@@ -251,31 +309,45 @@ export default function App() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
                     placeholder="Minimal 6 karakter"
+                    required
+                    minLength={6}
                   />
                 </div>
               </div>
               
-              {loginError && (
-                <div className="text-rose-600 text-sm font-medium p-3 bg-rose-50 border border-rose-100 rounded-lg flex items-start gap-2">
+              {authError && (
+                <div className="text-rose-600 text-sm font-medium p-3 bg-rose-50 border border-rose-100 rounded-lg flex items-start gap-2 animate-fadeIn">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                  {loginError}
+                  {authError}
                 </div>
               )}
               
               <button 
                 type="submit" 
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-200 hover:-translate-y-0.5 transition-all duration-200 mt-2"
+                disabled={loadingAuth}
+                className="w-full flex justify-center items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-200 hover:-translate-y-0.5 transition-all duration-200 mt-2 disabled:opacity-70"
               >
-                Masuk ke Dashboard
+                {loadingAuth ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : null}
+                {authMode === 'login' ? 'Masuk ke Dashboard' : 'Daftar Akun Baru'}
               </button>
             </form>
+
+            <div className="mt-8 text-center text-sm text-slate-500">
+              {authMode === 'login' ? (
+                <p>Belum punya akun? <button onClick={() => {setAuthMode('register'); setAuthError('');}} className="text-indigo-600 font-bold hover:underline">Daftar di sini</button></p>
+              ) : (
+                <p>Sudah punya akun? <button onClick={() => {setAuthMode('login'); setAuthError('');}} className="text-indigo-600 font-bold hover:underline">Masuk di sini</button></p>
+              )}
+            </div>
           </div>
         </div>
+
+        <style dangerouslySetInnerHTML={{__html: `@keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } } .animate-fadeIn { animation: fadeIn 0.3s ease forwards; }`}} />
       </div>
     );
   }
 
-  // TAMPILAN DASHBOARD MEMBER
+  // TAMPILAN DASHBOARD MEMBER UTAMA
   const currentLevel = userData?.subscriptionLevel || 0;
   const totalAccessibleFiles = availableFiles.filter(f => currentLevel >= f.reqLevel).length;
 
@@ -346,7 +418,7 @@ export default function App() {
           
           <div className="flex items-center gap-3 ml-auto cursor-pointer" onClick={() => setActiveTab('profile')}>
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-slate-800 leading-tight">{userData?.name}</p>
+              <p className="text-sm font-bold text-slate-800 leading-tight">{userData?.name || 'Member'}</p>
               <p className="text-xs text-slate-500 font-medium">{levelNames[currentLevel]}</p>
             </div>
             <div className="h-9 w-9 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-sm border-2 border-white shadow-sm">
@@ -360,13 +432,17 @@ export default function App() {
           
           {/* TAB: BERANDA */}
           {activeTab === 'home' && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-fadeIn">
               {/* Banner Welcome */}
               <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between md:items-center gap-6">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 opacity-20 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                 <div className="relative z-10">
-                  <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] mb-2">Halo, {userData?.name}! 👋</h2>
-                  <p className="text-slate-300 text-lg">Senang melihat Anda kembali. Anda saat ini berlangganan paket <strong className="text-white bg-white/10 px-2 py-0.5 rounded ml-1 border border-white/20">{levelNames[currentLevel]}</strong></p>
+                  <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] mb-2">Halo, {userData?.name || 'Kawan'}! 👋</h2>
+                  {currentLevel === 0 ? (
+                    <p className="text-slate-300 text-lg">Anda saat ini terdaftar sebagai <strong className="text-white bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded ml-1 border border-rose-500/30">Member Gratis</strong>. Segera beli paket untuk membuka file.</p>
+                  ) : (
+                    <p className="text-slate-300 text-lg">Senang melihat Anda kembali. Anda saat ini berlangganan paket <strong className="text-white bg-white/10 px-2 py-0.5 rounded ml-1 border border-white/20">{levelNames[currentLevel]}</strong></p>
+                  )}
                 </div>
                 <button onClick={() => setActiveTab('files')} className="relative z-10 bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-3 rounded-xl font-bold transition-colors whitespace-nowrap shadow-lg shadow-indigo-500/30">
                   Lihat File Saya
@@ -389,8 +465,8 @@ export default function App() {
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                   </div>
                   <div>
-                    <p className="text-slate-500 text-sm font-medium">File Terbuka</p>
-                    <p className="text-2xl font-black text-slate-800 font-['Outfit']">{totalAccessibleFiles} <span className="text-base font-medium text-slate-400">/ {availableFiles.length}</span></p>
+                    <p className="text-slate-500 text-sm font-medium">Akses Terbuka</p>
+                    <p className="text-2xl font-black text-slate-800 font-['Outfit']">{totalAccessibleFiles} <span className="text-base font-medium text-slate-400">/ {availableFiles.length} File</span></p>
                   </div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-5 cursor-pointer hover:border-indigo-300 transition-colors" onClick={() => setActiveTab('profile')}>
@@ -399,19 +475,20 @@ export default function App() {
                   </div>
                   <div>
                     <p className="text-slate-500 text-sm font-medium">Profil Anda</p>
-                    <p className="text-2xl font-black text-slate-800 font-['Outfit']">{userData?.phone ? 'Lengkap' : '50%'}</p>
+                    <p className="text-2xl font-black text-slate-800 font-['Outfit']">{userData?.phone ? 'Lengkap' : 'Perlu Diisi'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Sandbox Simulator */}
+              {/* Panel Bantuan Simulasi (Admin Tools) */}
               <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 mt-8">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div>
-                    <h3 className="text-indigo-900 font-bold text-lg">Simulator Hak Akses (Khusus Demo)</h3>
-                    <p className="text-indigo-700 text-sm">Ubah status langganan di bawah ini untuk melihat bagaimana file di tab "File Master" akan terbuka atau terkunci otomatis.</p>
+                    <h3 className="text-indigo-900 font-bold text-lg">⚙️ Simulator Langganan (Mode Admin)</h3>
+                    <p className="text-indigo-700 text-sm">Gunakan tombol di bawah untuk mensimulasikan pembelian paket. File akan terbuka sesuai level.</p>
                   </div>
-                  <div className="flex bg-white rounded-lg p-1 border border-indigo-200 shrink-0">
+                  <div className="flex flex-wrap bg-white rounded-lg p-1 border border-indigo-200 shrink-0">
+                    <button onClick={() => simulateUpgrade(0)} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${currentLevel === 0 ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>Hapus Paket</button>
                     <button onClick={() => simulateUpgrade(1)} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${currentLevel === 1 ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>Personal</button>
                     <button onClick={() => simulateUpgrade(2)} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${currentLevel === 2 ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>Bisnis</button>
                     <button onClick={() => simulateUpgrade(3)} className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${currentLevel === 3 ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>Agensi</button>
@@ -478,10 +555,12 @@ export default function App() {
                         </a>
                       ) : (
                         <button 
-                          onClick={() => simulateUpgrade(file.reqLevel)}
+                          onClick={() => {
+                            showToast(`Anda butuh paket ${file.reqLevelName}. Silakan gunakan simulator di menu Beranda.`, 'error');
+                          }}
                           className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 px-4 rounded-xl transition-colors shadow-lg"
                         >
-                          Upgrade ke {file.reqLevelName}
+                          Tingkatkan ke {file.reqLevelName}
                         </button>
                       )}
                     </div>
@@ -505,7 +584,7 @@ export default function App() {
                     {userData?.name ? userData.name.charAt(0).toUpperCase() : 'M'}
                   </div>
                   <div>
-                    <h3 className="text-2xl font-bold text-slate-800">{userData?.name}</h3>
+                    <h3 className="text-2xl font-bold text-slate-800">{userData?.name || 'Member'}</h3>
                     <p className="text-slate-500">{userData?.email}</p>
                   </div>
                 </div>
@@ -516,20 +595,21 @@ export default function App() {
                       <label className="block text-sm font-bold text-slate-700 mb-2">Nama Lengkap</label>
                       <input 
                         type="text" 
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
                         className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
                         required
+                        placeholder="Ketik nama Anda"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-2">Nomor WhatsApp</label>
                       <input 
                         type="tel" 
-                        value={editPhone}
-                        onChange={(e) => setEditPhone(e.target.value)}
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
                         className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
-                        placeholder="0812xxxxxx"
+                        placeholder="Contoh: 08123456789"
                       />
                     </div>
                   </div>
@@ -542,7 +622,7 @@ export default function App() {
                       disabled
                       className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
                     />
-                    <p className="text-xs text-slate-400 mt-2">*Email tidak dapat diubah karena merupakan identitas login utama.</p>
+                    <p className="text-xs text-slate-400 mt-2">*Email tidak dapat diubah karena terikat pada keamanan akun Google Anda.</p>
                   </div>
 
                   <div className="pt-4 flex justify-end">
@@ -567,7 +647,7 @@ export default function App() {
         </main>
       </div>
 
-      <style dangerouslySetInline={{__html: `
+      <style dangerouslySetInnerHTML={{__html: `
         @keyframes slideInLeft {
           0% { transform: translateX(100%); opacity: 0; }
           10% { transform: translateX(0); opacity: 1; }
