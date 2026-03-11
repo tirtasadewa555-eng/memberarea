@@ -14,17 +14,40 @@ import {
   setDoc, 
   onSnapshot, 
   collection, 
-  updateDoc,
-  deleteDoc,
-  addDoc,
+  updateDoc, 
+  deleteDoc, 
+  addDoc, 
   serverTimestamp
 } from 'firebase/firestore';
+import { 
+  LayoutDashboard, 
+  FolderLock, 
+  Users, 
+  UserCircle, 
+  LogOut, 
+  Plus, 
+  Search, 
+  Download, 
+  ShieldCheck, 
+  TrendingUp, 
+  Settings,
+  Menu,
+  X,
+  Bell,
+  Trash2,
+  Edit3,
+  ChevronRight,
+  FileText,
+  Video,
+  Box,
+  Lock
+} from 'lucide-react';
 
 // ==========================================
-// 1. KONFIGURASI (Auto-detect Demo Mode)
+// 1. KONFIGURASI SISTEM
 // ==========================================
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "", // Masukkan API Key Anda di sini
+  apiKey: "", 
   authDomain: "",
   projectId: "",
   storageBucket: "",
@@ -32,29 +55,25 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: ""
 };
 
-// Cek apakah config masih kosong
 const isDemoMode = !firebaseConfig || !firebaseConfig.apiKey;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'member-pro-system-v1';
+const ADMIN_EMAIL = "admin@website.com"; // Email ini akan mendapatkan akses Admin otomatis
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'premium-member-area-v2';
-const ADMIN_EMAIL = "admin@website.com"; 
-
-const levelNames = {
-  0: 'Gratis',
-  1: 'Personal',
-  2: 'Bisnis',
-  3: 'Agensi'
+const TIER_LEVELS = {
+  0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0 },
+  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000 },
+  2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 199000 },
+  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000 }
 };
 
-// Inisialisasi aman (Singleton Pattern)
-let app, auth, db;
+// Inisialisasi Firebase
+let firebaseApp, auth, db;
 if (!isDemoMode) {
   try {
-    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-  } catch (e) {
-    console.error("Firebase Initialization Error:", e);
-  }
+    firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+    auth = getAuth(firebaseApp);
+    db = getFirestore(firebaseApp);
+  } catch (e) { console.error("Firebase Init Failed", e); }
 }
 
 export default function App() {
@@ -62,331 +81,359 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [files, setFiles] = useState([]); 
-  const [allUsers, setAllUsers] = useState([]); 
-  const [loadingInit, setLoadingInit] = useState(true);
-  const [loadingAuth, setLoadingAuth] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   
-  // --- State UI ---
-  const [authMode, setAuthMode] = useState('login'); 
-  const [activeTab, setActiveTab] = useState('home'); 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-  const [adminSubTab, setAdminSubTab] = useState('users');
+  // --- App Flow States ---
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [files, setFiles] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // --- Form State ---
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [profileName, setProfileName] = useState('');
-  const [profilePhone, setProfilePhone] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  // --- Form States ---
+  const [authMode, setAuthMode] = useState('login');
+  const [formData, setFormData] = useState({ email: '', password: '', name: '' });
+  const [productForm, setProductForm] = useState({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
+  const [editingProductId, setEditingProductId] = useState(null);
 
-  // --- Form Produk (Admin) ---
-  const [editingFileId, setEditingFileId] = useState(null);
-  const [fileInput, setFileInput] = useState({ name: '', size: '', reqLevel: 1, url: '' });
+  // --- Perhitungan Data ---
+  const currentTier = userData?.subscriptionLevel || 0;
+  const stats = useMemo(() => ({
+    unlocked: files.filter(f => currentTier >= f.reqLevel).length,
+    total: files.length,
+    members: allUsers.length
+  }), [files, currentTier, allUsers]);
 
-  // --- Perhitungan Nilai Aman ---
-  const currentLevel = useMemo(() => userData?.subscriptionLevel || 0, [userData]);
-  const totalAccessibleFiles = useMemo(() => {
-    if (!files || !Array.isArray(files)) return 0;
-    return files.filter(f => currentLevel >= (f.reqLevel || 0)).length;
-  }, [files, currentLevel]);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
-  };
-
-  const translateError = (errorCode) => {
-    switch(errorCode) {
-      case 'auth/email-already-in-use': return 'Email sudah terdaftar.';
-      case 'auth/weak-password': return 'Password minimal 6 karakter.';
-      case 'auth/invalid-credential': return 'Email atau password salah.';
-      default: return 'Gagal terhubung ke sistem.';
-    }
+  const showToast = (msg, type = 'success') => {
+    setToast({ show: true, msg, type });
+    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
   };
 
   // ==========================================
   // 2. FIREBASE SYNC
   // ==========================================
-  
   useEffect(() => {
-    // Jika tidak ada Auth, langsung matikan loading (Mode Demo)
-    if (!auth) {
-      setLoadingInit(false);
-      return;
-    }
-
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        try { await signInWithCustomToken(auth, __initial_auth_token); } catch (e) {}
-      }
-    };
-    initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        setIsAdmin(currentUser.email === ADMIN_EMAIL);
-      }
-      setLoadingInit(false);
+    if (!auth) { setLoading(false); return; }
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setIsAdmin(u?.email === ADMIN_EMAIL);
+      setLoading(false);
     });
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
   useEffect(() => {
-    // Mode Demo: Gunakan data palsu jika "Login" diklik
-    if (isDemoMode && user) {
-      setUserData({ 
-        name: profileName || "Pengguna Demo", 
-        subscriptionLevel: 1, 
-        joinDate: new Date().toISOString() 
-      });
-      setFiles([
-        { id: '1', name: 'Panduan Sukses Bisnis (Ebook)', size: '2MB', reqLevel: 1, url: '#' },
-        { id: '2', name: 'Plugin Elementor Pro (ZIP)', size: '15MB', reqLevel: 2, url: '#' },
-        { id: '3', name: 'Master Template Agensi (ZIP)', size: '120MB', reqLevel: 3, url: '#' }
-      ]);
-      return;
-    }
+    if (!user || isDemoMode) return;
 
-    // Jika Firebase belum siap, jangan jalankan listener
-    if (!user || !db) return;
+    // Profil User
+    const profileUnsub = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
+      if (d.exists()) setUserData(d.data());
+    });
 
-    // Sinkronisasi Profil Pribadi
-    const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
-    const unsubProfile = onSnapshot(userRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserData(data);
-        setProfileName(data.name || '');
-        setProfilePhone(data.phone || '');
-      }
-    }, (err) => console.warn("Profile sync error:", err));
+    // Produk (Semua Member)
+    const filesUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => {
+      setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
-    // Katalog File (Public)
-    const filesRef = collection(db, 'artifacts', appId, 'public', 'data', 'files');
-    const unsubFiles = onSnapshot(filesRef, (snapshot) => {
-      setFiles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (err) => console.warn("Files sync error:", err));
-
-    // Registrasi User (Hanya Admin)
-    let unsubRegistry = () => {};
+    // List Member (Hanya Admin)
+    let adminUnsub = () => {};
     if (isAdmin) {
-      const registryRef = collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry');
-      unsubRegistry = onSnapshot(registryRef, (snapshot) => {
-        setAllUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-      }, (err) => console.warn("Registry sync error:", err));
+      adminUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => {
+        setAllUsers(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
     }
 
-    return () => { unsubProfile(); unsubFiles(); unsubRegistry(); };
+    return () => { profileUnsub(); filesUnsub(); adminUnsub(); };
   }, [user, isAdmin]);
 
   // ==========================================
-  // 3. HANDLERS
+  // 3. LOGIKA AKSI
   // ==========================================
-  const handleAuthSubmit = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
-    
-    // Logic untuk Mode Demo
     if (isDemoMode) {
-      setLoadingAuth(true);
-      setTimeout(() => {
-        setUser({ email: email, uid: "demo-user-123" });
-        setLoadingAuth(false);
-        showToast("Masuk dalam Mode Demo (Bukan Real DB)");
-      }, 800);
+      setUser({ email: formData.email, uid: 'demo-uid' });
+      setUserData({ name: formData.name || 'Demo User', subscriptionLevel: 1, joinDate: new Date().toISOString() });
       return;
     }
-
-    setAuthError('');
-    setLoadingAuth(true);
+    setAuthLoading(true);
     try {
       if (authMode === 'register') {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const uid = userCredential.user.uid;
-        const initialData = { name: profileName, email, phone: '', subscriptionLevel: 0, joinDate: new Date().toISOString() };
-        await setDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), initialData);
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { uid, ...initialData });
-        showToast('Akun berhasil dibuat!');
+        const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        const initData = { name: formData.name, email: formData.email, subscriptionLevel: 0, joinDate: new Date().toISOString(), uid: cred.user.uid };
+        await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), initData);
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), initData);
+        showToast('Pendaftaran sukses!');
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
-        showToast('Berhasil masuk!');
+        await signInWithEmailAndPassword(auth, formData.email, formData.password);
+        showToast('Selamat datang kembali!');
       }
-    } catch (error) {
-      setAuthError(translateError(error.code));
-    }
-    setLoadingAuth(false);
+    } catch (err) { showToast('Email atau password salah', 'error'); }
+    setAuthLoading(false);
   };
 
-  const handleLogout = () => {
-    if (!isDemoMode && auth) {
-      signOut(auth);
-    }
-    setUser(null);
-    setUserData(null);
-    showToast("Berhasil keluar");
-  };
-
-  const handleAdminUpdateLevel = async (targetUid, newLevel) => {
-    if (isDemoMode) return showToast("Fungsi ini dinonaktifkan di Mode Demo");
+  const handleProductSubmit = async (e) => {
+    e.preventDefault();
+    if (!isAdmin) return;
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', targetUid), { subscriptionLevel: newLevel });
-      await updateDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'profile', 'data'), { subscriptionLevel: newLevel });
-      showToast(`Akses member diperbarui.`);
-    } catch (err) {
-      showToast('Gagal update.', 'error');
-    }
+      const data = { ...productForm, reqLevel: parseInt(productForm.reqLevel), updatedAt: serverTimestamp() };
+      if (editingProductId) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingProductId), data);
+        showToast('Produk diperbarui');
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() });
+        showToast('Produk ditambahkan');
+      }
+      setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
+      setEditingProductId(null);
+    } catch (err) { showToast('Gagal menyimpan data', 'error'); }
   };
 
-  // --- Render Utama ---
-  if (loadingInit) return <div className="min-h-screen flex items-center justify-center bg-white"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div></div>;
+  const updateMemberTier = async (uid, level) => {
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { subscriptionLevel: level });
+      await updateDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), { subscriptionLevel: level });
+      showToast('Status member diperbarui');
+    } catch (err) { showToast('Akses ditolak', 'error'); }
+  };
 
-  // --- UI: LOGIN ---
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 font-['Plus_Jakarta_Sans'] p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 border border-slate-200">
-          {isDemoMode && (
-            <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-[10px] font-black text-center uppercase tracking-widest">
-              ⚠️ Running in Preview Mode
-            </div>
-          )}
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-black text-slate-900 mb-1">MemberArea<span className="text-indigo-600">.</span></h1>
-            <p className="text-slate-400 text-sm font-medium">{authMode === 'login' ? 'Masuk ke dashboard member' : 'Buat akun member baru'}</p>
+  if (loading) return <div className="h-screen w-screen flex items-center justify-center bg-white"><div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
+
+  // --- VIEW: LOGIN / REGISTER ---
+  if (!user) return (
+    <div className="min-h-screen bg-[#F1F5F9] flex items-center justify-center p-4 font-['Plus_Jakarta_Sans'] text-slate-800">
+      <div className="max-w-4xl w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200">
+        <div className="md:w-1/2 bg-indigo-600 p-12 text-white flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+          <div className="relative z-10">
+            <h1 className="text-3xl font-black font-['Outfit'] mb-4 tracking-tighter">MemberArea<span className="text-amber-400">.</span></h1>
+            <p className="text-indigo-100 text-lg">Solusi terbaik untuk mendistribusikan aset digital Anda secara profesional.</p>
           </div>
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {authMode === 'register' && (
-              <input type="text" value={profileName} onChange={(e)=>setProfileName(e.target.value)} placeholder="Nama Lengkap" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all font-bold" required />
+          <div className="relative z-10 space-y-4">
+             <div className="flex items-center gap-3 bg-white/10 p-3 rounded-2xl border border-white/10"><ShieldCheck size={20} className="text-amber-400"/> <span className="text-xs font-bold uppercase tracking-widest">Sistem Lisensi Aman</span></div>
+             <div className="flex items-center gap-3 bg-white/10 p-3 rounded-2xl border border-white/10"><TrendingUp size={20} className="text-amber-400"/> <span className="text-xs font-bold uppercase tracking-widest">Update Produk Berkala</span></div>
+          </div>
+        </div>
+        <div className="md:w-1/2 p-10 md:p-14">
+          <div className="flex gap-4 p-1 bg-slate-100 rounded-2xl mb-8">
+            <button onClick={()=>setAuthMode('login')} className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-[2px] transition-all ${authMode==='login'?'bg-white text-indigo-600 shadow-sm':'text-slate-400'}`}>LOGIN</button>
+            <button onClick={()=>setAuthMode('register')} className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-[2px] transition-all ${authMode==='register'?'bg-white text-indigo-600 shadow-sm':'text-slate-400'}`}>REGISTER</button>
+          </div>
+          <h2 className="text-2xl font-black mb-1 font-['Outfit']">{authMode==='login'?'Masuk Dashboard':'Daftar Member'}</h2>
+          <p className="text-slate-400 text-sm mb-8">Kelola akun dan produk digital Anda.</p>
+          <form onSubmit={handleAuth} className="space-y-4">
+            {authMode==='register' && (
+              <input type="text" placeholder="Nama Lengkap" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} required />
             )}
-            <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="Alamat Email" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all font-bold" required />
-            <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="Password" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all font-bold" required />
-            {authError && <div className="p-3 bg-rose-50 text-rose-600 text-xs font-bold rounded-lg">{authError}</div>}
-            <button type="submit" disabled={loadingAuth} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-lg transition-all flex justify-center items-center gap-2">
-              {loadingAuth && <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>}
-              {authMode === 'login' ? 'MASUK SEKARANG' : 'DAFTAR SEKARANG'}
+            <input type="email" placeholder="Alamat Email" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold" value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} required />
+            <input type="password" placeholder="Password" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold" value={formData.password} onChange={e=>setFormData({...formData, password: e.target.value})} required />
+            <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex justify-center items-center gap-2">
+              {authLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'MASUK KE SISTEM'}
             </button>
           </form>
-          <div className="mt-8 text-center">
-            <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-slate-400 text-xs font-black hover:text-indigo-600 uppercase tracking-widest transition-all">
-              {authMode === 'login' ? 'Belum punya akun?' : 'Sudah punya akun?'}
-            </button>
-          </div>
+          {isDemoMode && <p className="mt-8 text-center text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 py-2 rounded-lg border border-amber-100 animate-pulse">Running in Preview Mode</p>}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  // --- UI: DASHBOARD ---
   return (
-    <div className="min-h-screen bg-slate-50 font-['Plus_Jakarta_Sans'] flex flex-col md:flex-row">
-      {/* Sidebar */}
-      <aside className={`fixed md:sticky top-0 left-0 h-screen w-64 bg-white border-r border-slate-200 flex flex-col z-40 transition-transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className="h-20 flex items-center px-8 border-b border-slate-100"><h1 className="text-xl font-black text-slate-800">Member<span className="text-indigo-600">Area</span></h1></div>
-        <div className="p-6 flex-1 flex flex-col gap-1 overflow-y-auto">
-          <NavItem active={activeTab === 'home'} onClick={() => {setActiveTab('home'); setIsMobileMenuOpen(false);}} label="Dashboard" icon="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          <NavItem active={activeTab === 'files'} onClick={() => {setActiveTab('files'); setIsMobileMenuOpen(false);}} label="File Master" icon="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" count={totalAccessibleFiles} />
-          {isAdmin && <NavItem active={activeTab === 'admin'} onClick={() => {setActiveTab('admin'); setIsMobileMenuOpen(false);}} label="Panel Admin" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />}
-          <NavItem active={activeTab === 'profile'} onClick={() => {setActiveTab('profile'); setIsMobileMenuOpen(false);}} label="Pengaturan" icon="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    <div className="min-h-screen bg-[#F8FAFC] font-['Plus_Jakarta_Sans'] flex text-slate-800">
+      
+      {/* SIDEBAR */}
+      <aside className={`fixed lg:sticky top-0 left-0 h-screen bg-white border-r border-slate-200 flex flex-col z-50 transition-all ${isSidebarOpen ? 'w-72' : 'w-20 -translate-x-full lg:translate-x-0'}`}>
+        <div className="h-20 flex items-center px-8 border-b border-slate-50">
+          {isSidebarOpen && <h1 className="text-xl font-black tracking-tighter text-indigo-600 font-['Outfit']">Member<span className="text-slate-900">Area</span></h1>}
+          <button onClick={()=>setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 ml-auto"><Menu size={20}/></button>
         </div>
-        <div className="p-6 border-t border-slate-100">
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-black text-rose-500 hover:bg-rose-50 rounded-2xl transition-all">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M17 16l4-4m0 0l-4-4m4 4H7" /></svg> Keluar
-          </button>
+        <div className="p-6 flex-1 space-y-1">
+          <NavItem active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={<LayoutDashboard size={20}/>} label="Beranda" expanded={isSidebarOpen} />
+          <NavItem active={activeTab==='files'} onClick={()=>setActiveTab('files')} icon={<FolderLock size={20}/>} label="File Master" count={stats.unlocked} expanded={isSidebarOpen} />
+          {isAdmin && <NavItem active={activeTab==='admin'} onClick={()=>setActiveTab('admin')} icon={<Settings size={20}/>} label="Admin Panel" expanded={isSidebarOpen} />}
+          <NavItem active={activeTab==='profile'} onClick={()=>setActiveTab('profile')} icon={<UserCircle size={20}/>} label="Profil Saya" expanded={isSidebarOpen} />
         </div>
+        <div className="p-6 border-t border-slate-100"><button onClick={handleLogout} className="flex items-center gap-4 px-4 py-4 rounded-2xl font-bold text-rose-500 hover:bg-rose-50 w-full transition-all group"><LogOut size={20}/><span className={!isSidebarOpen ? 'hidden' : 'block'}>Keluar</span></button></div>
       </aside>
 
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-6 md:px-10 sticky top-0 z-20">
-          <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 text-slate-600"><svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
-          <div className="flex items-center gap-4 ml-auto">
+        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 md:px-12 sticky top-0 z-30">
+          <div className="flex items-center gap-3">
+             <div className="px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 text-[10px] font-black uppercase tracking-widest hidden sm:flex items-center gap-2"><ShieldCheck size={14}/> Sistem Aktif</div>
+          </div>
+          <div className="flex items-center gap-6">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-black text-slate-900 mb-1 leading-none">{userData?.name || 'Member'}</p>
-              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{isAdmin ? 'ADMIN' : levelNames[currentLevel]}</p>
+              <p className="text-sm font-black text-slate-900 leading-none mb-1">{userData?.name || 'Member'}</p>
+              <p className={`text-[10px] font-black uppercase tracking-widest ${isAdmin ? 'text-indigo-600' : TIER_LEVELS[currentTier].color}`}>{isAdmin ? 'SUPER ADMIN' : TIER_LEVELS[currentTier].name}</p>
             </div>
-            <div className="h-10 w-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-sm shadow-xl shadow-indigo-100">
-              {userData?.name ? userData.name.charAt(0).toUpperCase() : 'M'}
-            </div>
+            <div className="h-11 w-11 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-xl shadow-indigo-200">{userData?.name?.charAt(0).toUpperCase()}</div>
           </div>
         </header>
 
-        <main className="flex-1 p-6 md:p-10 max-w-7xl mx-auto w-full">
-          {toast.show && <div className="fixed bottom-8 right-8 z-[60] px-6 py-4 rounded-2xl shadow-2xl font-bold text-white bg-indigo-600 animate-slideInLeft">{toast.message}</div>}
+        <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full animate-fadeIn">
+          {toast.show && <div className={`fixed bottom-8 right-8 z-[60] px-6 py-4 rounded-2xl shadow-2xl font-black text-white ${toast.type==='error'?'bg-rose-500':'bg-indigo-600'} animate-slideInRight`}>{toast.msg}</div>}
 
-          {/* VIEW: HOME */}
-          {activeTab === 'home' && (
-            <div className="space-y-8 animate-fadeIn">
-              <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white relative overflow-hidden flex flex-col md:flex-row justify-between items-center gap-8 shadow-2xl border border-white/5">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/20 rounded-full blur-[120px] -mr-20 -mt-20"></div>
-                <div className="relative z-10 text-center md:text-left">
-                  <h2 className="text-3xl md:text-5xl font-black mb-4 font-['Outfit'] tracking-tight">Halo, {userData?.name?.split(' ')[0] || 'Member'}!</h2>
-                  <p className="text-slate-400 text-lg">Kelola akun dan akses semua file produk Anda di halaman File Master.</p>
+          {/* TAB: DASHBOARD (MEMBER & ADMIN STATS) */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-10">
+              <div className="bg-slate-900 rounded-[3rem] p-10 md:p-14 text-white relative overflow-hidden shadow-3xl border border-white/5">
+                <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] -mr-40 -mt-40"></div>
+                <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-10">
+                  <div className="space-y-5 text-center md:text-left">
+                    <h2 className="text-4xl md:text-5xl font-black font-['Outfit'] tracking-tight">Halo, {userData?.name?.split(' ')[0]}! 👋</h2>
+                    <p className="text-slate-400 text-lg max-w-md">Senang melihat Anda kembali. Akses file master produk digital Anda sekarang di menu File Master.</p>
+                    <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-4">
+                       <button onClick={()=>setActiveTab('files')} className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-2xl hover:-translate-y-1 transition-all">FILES PRODUK <ChevronRight size={18}/></button>
+                       <button className="bg-white/10 backdrop-blur-md text-white border border-white/10 px-8 py-4 rounded-2xl font-black hover:bg-indigo-600 transition-all">PANDUAN PDF</button>
+                    </div>
+                  </div>
+                  <div className="w-56 h-56 bg-white/5 rounded-[2.5rem] border border-white/10 flex flex-col items-center justify-center gap-4 shadow-2xl backdrop-blur-xl animate-float">
+                    <TrendingUp size={48} className="text-amber-400" />
+                    <div className="text-center">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Aktivitas Akun</p>
+                      <p className="text-3xl font-black text-white">+98%</p>
+                    </div>
+                  </div>
                 </div>
-                <button onClick={() => setActiveTab('files')} className="relative z-10 bg-white text-indigo-900 px-10 py-5 rounded-[1.5rem] font-black shadow-2xl transition-all hover:scale-105">FILE MASTER</button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <StatCard label="Member Sejak" val={userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID') : '-'} icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" color="emerald" />
-                <StatCard label="File Dibuka" val={`${totalAccessibleFiles} / ${files.length}`} icon="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" color="indigo" />
-                <StatCard label="Status Paket" val={levelNames[currentLevel]} icon="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 21.248a11.955 11.955 0 01-9.618-7.016 11.955 11.955 0 010-9.464A11.955 11.955 0 0112 2.752a11.955 11.955 0 019.618 7.016z" color="amber" />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+                <StatCard label="Pendaftaran" val={userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID') : '-'} icon={<ShieldCheck size={28}/>} color="emerald" />
+                <StatCard label="Akses Terbuka" val={`${stats.unlocked} / ${stats.total} File`} icon={<Box size={28}/>} color="indigo" />
+                <StatCard label="Paket Aktif" val={TIER_LEVELS[currentTier].name} icon={<Users size={28}/>} color="amber" />
               </div>
             </div>
           )}
 
-          {/* VIEW: FILES */}
+          {/* TAB: FILE MASTER */}
           {activeTab === 'files' && (
-            <div className="animate-fadeIn">
-              <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] mb-8">Katalog Produk</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {files.map(file => <FileCard key={file.id} file={file} currentLevel={currentLevel} />)}
-              </div>
-            </div>
-          )}
-
-          {/* VIEW: ADMIN PANEL */}
-          {activeTab === 'admin' && isAdmin && (
             <div className="animate-fadeIn space-y-10">
-              <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-fit">
-                <button onClick={()=>setAdminSubTab('users')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${adminSubTab === 'users' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>MEMBER</button>
-                <button onClick={()=>setAdminSubTab('products')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${adminSubTab === 'products' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>PRODUK</button>
-              </div>
-              {adminSubTab === 'users' ? (
-                <div className="bg-white rounded-3xl border border-slate-200 overflow-x-auto shadow-xl">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest"><tr className="px-8"><th className="px-8 py-5">Nama & Email</th><th className="px-8 py-5">Akses</th><th className="px-8 py-5 text-center">Ubah Paket</th></tr></thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {allUsers.map(m => (
-                        <tr key={m.id} className="hover:bg-slate-50/50">
-                          <td className="px-8 py-5"><p className="font-bold text-slate-900">{m.name}</p><p className="text-xs text-slate-400">{m.email}</p></td>
-                          <td className="px-8 py-5"><span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full text-[10px] font-black">{levelNames[m.subscriptionLevel]}</span></td>
-                          <td className="px-8 py-5 text-center">
-                            <div className="flex justify-center gap-1">
-                              {[1,2,3].map(lv => <button key={lv} onClick={()=>handleAdminUpdateLevel(m.id, lv)} className={`px-2 py-1 rounded-lg text-[10px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-400'}`}>{levelNames[lv]}</button>)}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <h2 className="text-3xl font-black font-['Outfit'] tracking-tight">Koleksi Produk Anda</h2>
+              {files.length === 0 ? (
+                <div className="py-24 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-200">
+                   <Box size={48} className="text-slate-200 mx-auto mb-4"/>
+                   <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Database file masih kosong</p>
                 </div>
               ) : (
-                <div className="p-20 text-center bg-white rounded-3xl border border-dashed border-slate-300 text-slate-400 font-bold">Menu produk dapat diisi melalui Firebase atau integrasi API Firestore.</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {files.map(file => <ProFileCard key={file.id} file={file} currentTier={currentTier} />)}
+                </div>
               )}
+            </div>
+          )}
+
+          {/* TAB: ADMIN PANEL (MANAGE PRODUCTS & MEMBERS) */}
+          {activeTab === 'admin' && isAdmin && (
+            <div className="animate-fadeIn space-y-12">
+               <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+                  <div>
+                    <h2 className="text-3xl font-black font-['Outfit'] tracking-tight">Panel Kontrol Administrator</h2>
+                    <p className="text-slate-400 font-medium">Kelola inventaris file dan status langganan member.</p>
+                  </div>
+                  <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex gap-1">
+                     <button onClick={()=>setSearchQuery('')} className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-indigo-100">Daftar Member</button>
+                     <button onClick={()=>setActiveTab('admin')} className="px-6 py-3 bg-slate-50 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest">Atur Katalog</button>
+                  </div>
+               </div>
+
+               {/* Add/Edit Product Form */}
+               <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                 <div className="lg:col-span-1">
+                   <form onSubmit={handleProductSubmit} className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-2xl space-y-6 sticky top-32">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-100">
+                          {editingProductId ? <Edit3 size={24}/> : <Plus size={28}/>}
+                        </div>
+                        <h3 className="text-xl font-black font-['Outfit']">{editingProductId ? 'Update Produk' : 'Tambah Produk'}</h3>
+                      </div>
+                      <div className="space-y-4">
+                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Produk</label><input type="text" placeholder="..." value={productForm.name} onChange={e=>setProductForm({...productForm, name:e.target.value})} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-600 font-bold" required /></div>
+                         <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Kategori</label><select value={productForm.category} onChange={e=>setProductForm({...productForm, category:e.target.value})} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 font-bold outline-none"><option>Ebook</option><option>Video</option><option>Software</option></select></div>
+                            <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ukuran</label><input type="text" placeholder="10MB" value={productForm.size} onChange={e=>setProductForm({...productForm, size:e.target.value})} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-600 font-bold" required /></div>
+                         </div>
+                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Minimal Tier</label><select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel:e.target.value})} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 font-bold outline-none">{[1,2,3].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}</select></div>
+                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">URL Download</label><input type="text" placeholder="https://..." value={productForm.url} onChange={e=>setProductForm({...productForm, url:e.target.value})} className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-600 font-bold" required /></div>
+                      </div>
+                      <div className="flex gap-2 pt-4">
+                        <button type="submit" className="flex-1 bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">{editingProductId ? 'Update' : 'Publish'}</button>
+                        {editingProductId && <button type="button" onClick={()=>{setEditingProductId(null); setProductForm({name:'', size:'', reqLevel:1, url:'', category:'Ebook'})}} className="p-4 bg-slate-100 text-slate-400 rounded-2xl hover:bg-slate-200"><X/></button>}
+                      </div>
+                   </form>
+                 </div>
+
+                 {/* User Registry & Active Products List */}
+                 <div className="lg:col-span-2 space-y-10">
+                    <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
+                       <div className="p-8 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between"><h4 className="font-black text-slate-800 uppercase tracking-wider text-xs">Registry Member Aktif</h4> <span className="bg-indigo-600 text-white text-[10px] px-3 py-1 rounded-full font-black">{allUsers.length} TOTAL</span></div>
+                       <div className="overflow-x-auto max-h-[400px] custom-scrollbar">
+                         <table className="w-full text-left">
+                            <tbody className="divide-y divide-slate-50">
+                               {allUsers.map(m => (
+                                 <tr key={m.id} className="hover:bg-slate-50/80 transition-all">
+                                   <td className="px-8 py-5"><p className="font-black text-slate-800 text-sm">{m.name || 'Member'}</p><p className="text-[10px] text-slate-400 font-bold">{m.email}</p></td>
+                                   <td className="px-8 py-5">
+                                      <div className="flex gap-1">
+                                        {[1,2,3].map(lv => (
+                                          <button key={lv} onClick={()=>updateMemberTier(m.id, lv)} className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white text-slate-300 border-slate-100 hover:border-indigo-200 hover:text-indigo-600'}`}>{TIER_LEVELS[lv].name.toUpperCase()}</button>
+                                        ))}
+                                      </div>
+                                   </td>
+                                 </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                       </div>
+                    </div>
+
+                    <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
+                       <div className="p-8 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between"><h4 className="font-black text-slate-800 uppercase tracking-wider text-xs">Inventaris Katalog</h4> <span className="bg-indigo-600 text-white text-[10px] px-3 py-1 rounded-full font-black">{files.length} FILE</span></div>
+                       <div className="divide-y divide-slate-50">
+                          {files.map(f => (
+                            <div key={f.id} className="p-6 flex items-center justify-between hover:bg-slate-50 group">
+                               <div className="flex items-center gap-6">
+                                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                                     {f.category === 'Ebook' ? <FileText size={20}/> : <Box size={20}/>}
+                                  </div>
+                                  <div>
+                                    <h5 className="font-black text-slate-800 text-sm leading-tight">{f.name}</h5>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{f.size} • {TIER_LEVELS[f.reqLevel].name}</p>
+                                  </div>
+                               </div>
+                               <div className="flex gap-2">
+                                  <button onClick={()=>{setEditingProductId(f.id); setProductForm({name:f.name, size:f.size, reqLevel:f.reqLevel, url:f.url, category:f.category}); window.scrollTo({top:0, behavior:'smooth'})}} className="p-2.5 hover:bg-indigo-50 text-indigo-600 rounded-xl transition-all"><Edit3 size={18}/></button>
+                                  <button onClick={async ()=>{if(window.confirm('Hapus file?')) await deleteDoc(doc(db,'artifacts',appId,'public','data','files',f.id)); showToast('File dihapus');}} className="p-2.5 hover:bg-rose-50 text-rose-500 rounded-xl transition-all"><Trash2 size={18}/></button>
+                               </div>
+                            </div>
+                          ))}
+                       </div>
+                    </div>
+                 </div>
+               </div>
             </div>
           )}
 
           {/* VIEW: PROFILE */}
           {activeTab === 'profile' && (
             <div className="animate-fadeIn max-w-2xl">
-              <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] mb-8">Informasi Akun</h2>
-              <div className="bg-white rounded-[2.5rem] border border-slate-200 p-10 shadow-xl space-y-8">
-                <div className="flex items-center gap-8 pb-8 border-b border-slate-100">
-                  <div className="h-24 w-24 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-4xl font-black text-white shadow-2xl shadow-indigo-200">{userData?.name?.charAt(0).toUpperCase() || 'M'}</div>
-                  <div><h3 className="text-3xl font-black text-slate-900">{userData?.name || 'Member'}</h3><p className="text-slate-400 font-bold">{userData?.email}</p></div>
-                </div>
-                <button onClick={() => isDemoMode ? showToast("Fitur update aktif di mode real DB", "error") : alert("Update Profile Logic Here")} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] shadow-2xl shadow-indigo-100 transition-all hover:-translate-y-1">UPDATE PROFIL</button>
-              </div>
+               <h2 className="text-3xl font-black font-['Outfit'] mb-8">Pengaturan Akun</h2>
+               <div className="bg-white rounded-[3rem] border border-slate-200 p-10 md:p-14 shadow-2xl space-y-10">
+                  <div className="flex flex-col sm:flex-row items-center gap-10 border-b border-slate-100 pb-10">
+                    <div className="h-24 w-24 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center text-4xl font-black text-white shadow-2xl shadow-indigo-200">{userData?.name?.charAt(0).toUpperCase()}</div>
+                    <div className="text-center sm:text-left">
+                       <h3 className="text-3xl font-black text-slate-900 leading-none mb-2">{userData?.name || 'Member'}</h3>
+                       <p className="text-slate-400 font-bold text-lg">{userData?.email}</p>
+                       <div className="mt-4 flex gap-2"><span className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100">Status: {TIER_LEVELS[currentTier].name}</span></div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">WhatsApp</label><div className="px-5 py-4 rounded-2xl bg-slate-50 border border-slate-100 font-black text-slate-700 text-sm">{userData?.phone || 'Belum diatur'}</div></div>
+                     <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Terdaftar</label><div className="px-5 py-4 rounded-2xl bg-slate-50 border border-slate-100 font-black text-slate-700 text-sm">{new Date(userData?.joinDate).toLocaleDateString('id-ID')}</div></div>
+                  </div>
+                  <button onClick={()=>alert('Gunakan dashboard admin untuk mengubah profil')} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] shadow-2xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-3"><Edit3 size={20}/> UPDATE PROFIL</button>
+               </div>
             </div>
           )}
         </main>
@@ -394,57 +441,75 @@ export default function App() {
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fadeIn { animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
-        @keyframes slideInLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        .animate-slideInLeft { animation: slideInLeft 0.3s ease-out; }
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .animate-fadeIn { animation: fadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .animate-slideInRight { animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .animate-float { animation: float 4s ease-in-out infinite; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
       `}} />
     </div>
   );
 }
 
-function NavItem({ active, onClick, label, icon, count }) {
+// ==========================================
+// 4. MODULAR UI COMPONENTS
+// ==========================================
+function NavItem({ active, onClick, icon, label, count, expanded }) {
   return (
-    <button onClick={onClick} className={`flex items-center justify-between px-6 py-4 rounded-2xl font-black transition-all ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-slate-50'}`}>
+    <button onClick={onClick} className={`flex items-center justify-between px-6 py-4 rounded-2xl font-black transition-all group ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-100 scale-[1.03]' : 'text-slate-500 hover:bg-slate-50'}`}>
       <div className="flex items-center gap-4">
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d={icon} /></svg>
-        <span className="text-sm tracking-tight">{label}</span>
+        <div className={`transition-all ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:text-indigo-600'}`}>{icon}</div>
+        {expanded && <span className="text-sm tracking-tight">{label}</span>}
       </div>
-      {count !== undefined && !active && <span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
+      {count > 0 && !active && expanded && <span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
     </button>
   );
 }
 
 function StatCard({ label, val, icon, color }) {
-  const colors = { emerald: 'bg-emerald-100 text-emerald-600', indigo: 'bg-indigo-100 text-indigo-600', amber: 'bg-amber-100 text-amber-600' };
+  const colors = { emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100', indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100', amber: 'bg-amber-50 text-amber-600 border-amber-100' };
   return (
-    <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-6 group hover:shadow-xl transition-all">
-      <div className={`w-16 h-16 rounded-[1.25rem] flex items-center justify-center transition-all group-hover:scale-110 ${colors[color]}`}>
-        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d={icon} /></svg>
+    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex items-center gap-8 group hover:shadow-2xl transition-all duration-500">
+      <div className={`w-20 h-20 rounded-[1.75rem] flex items-center justify-center transition-all group-hover:rotate-6 ${colors[color]} border-2`}>{icon}</div>
+      <div>
+        <p className="text-slate-400 text-[10px] font-black uppercase tracking-[3px] mb-2">{label}</p>
+        <p className="text-2xl font-black text-slate-800 font-['Outfit'] tracking-tighter">{val}</p>
       </div>
-      <div><p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1.5">{label}</p><p className="text-xl font-black text-slate-900 font-['Outfit']">{val}</p></div>
     </div>
   );
 }
 
-function FileCard({ file, currentLevel }) {
-  const isAccessible = currentLevel >= (file.reqLevel || 0);
+function ProFileCard({ file, currentTier }) {
+  const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
-    <div className={`bg-white rounded-[2.5rem] border ${isAccessible ? 'border-slate-200 hover:border-indigo-400 hover:shadow-2xl' : 'border-slate-200 opacity-60 bg-slate-50'} p-10 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
-      <div className="flex justify-between items-start mb-8">
-        <div className={`h-16 w-16 rounded-[1.5rem] flex items-center justify-center transition-all duration-500 ${isAccessible ? 'bg-indigo-100 text-indigo-600 shadow-xl shadow-indigo-50 group-hover:bg-indigo-600 group-hover:text-white' : 'bg-slate-200 text-slate-400'}`}>
-          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+    <div className={`bg-white rounded-[3rem] border ${isAccessible ? 'border-slate-200 hover:border-indigo-400 hover:shadow-3xl' : 'border-slate-200 opacity-60 bg-slate-50'} p-10 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
+      {isAccessible && <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-sky-400"></div>}
+      <div className="flex justify-between items-start mb-10">
+        <div className={`h-16 w-16 rounded-[1.75rem] flex items-center justify-center transition-all duration-500 shadow-xl ${isAccessible ? 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white' : 'bg-slate-200 text-slate-400'}`}>
+          {file.category === 'Ebook' ? <FileText size={28}/> : file.category === 'Video' ? <Video size={28}/> : <Box size={28}/>}
         </div>
-        {!isAccessible && <span className="bg-rose-100 text-rose-600 text-[9px] font-black px-4 py-2 rounded-full uppercase flex items-center gap-2 border border-rose-200"><svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg> TERKUNCI</span>}
+        {!isAccessible && (
+          <div className="bg-rose-100 text-rose-600 text-[9px] font-black px-4 py-2 rounded-full uppercase tracking-tighter flex items-center gap-2 border border-rose-200">
+            <Lock size={14}/> TERKUNCI
+          </div>
+        )}
       </div>
-      <h4 className="text-2xl font-black text-slate-900 mb-4 font-['Outfit'] leading-tight tracking-tight">{file.name}</h4>
-      <div className="mt-auto space-y-3 mb-10">
-         <div className="flex justify-between text-[11px] font-black tracking-tight"><span className="text-slate-400 uppercase">Size File</span><span className="text-slate-900">{file.size}</span></div>
-         <div className="flex justify-between text-[11px] font-black tracking-tight"><span className="text-slate-400 uppercase">Minimal Paket</span><span className={isAccessible ? 'text-emerald-600' : 'text-rose-500'}>{levelNames[file.reqLevel]}</span></div>
+      <div className="space-y-3 mb-10 flex-1">
+        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[2px]">{file.category}</p>
+        <h4 className="text-2xl font-black text-slate-900 font-['Outfit'] leading-[1.1] tracking-tight group-hover:text-indigo-600 transition-colors">{file.name}</h4>
+      </div>
+      <div className="space-y-4 mb-10">
+         <div className="flex justify-between text-[11px] font-black tracking-tight"><span className="text-slate-400 uppercase">Ukuran File</span><span className="text-slate-800">{file.size}</span></div>
+         <div className="flex justify-between text-[11px] font-black tracking-tight"><span className="text-slate-400 uppercase">Akses Tier</span><span className={isAccessible ? 'text-emerald-500' : 'text-rose-500'}>{TIER_LEVELS[file.reqLevel].name.toUpperCase()}</span></div>
       </div>
       {isAccessible ? (
-        <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-indigo-600 text-white text-center font-black py-5 rounded-[1.5rem] shadow-xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-1 active:scale-95">DOWNLOAD</a>
+        <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-indigo-600 text-white text-center font-black py-5 rounded-[1.75rem] shadow-2xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-2 flex items-center justify-center gap-3">
+          <Download size={20}/> UNDUH SEKARANG
+        </a>
       ) : (
-        <button disabled className="w-full bg-slate-100 text-slate-400 font-black py-5 rounded-[1.5rem] cursor-not-allowed uppercase text-xs">Hanya Paket {levelNames[file.reqLevel]}</button>
+        <button disabled className="w-full bg-slate-100 text-slate-400 font-black py-5 rounded-[1.75rem] cursor-not-allowed uppercase text-[10px] tracking-widest">MINIMAL {TIER_LEVELS[file.reqLevel].name}</button>
       )}
     </div>
   );
