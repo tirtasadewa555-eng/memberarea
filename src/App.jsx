@@ -47,7 +47,8 @@ import {
   Clock,
   Megaphone,
   FolderLock,
-  ArrowRight
+  ArrowRight,
+  AlertCircle
 } from 'lucide-react';
 
 // ==========================================
@@ -227,6 +228,14 @@ export default function App() {
     } catch (err) { showToast("Gagal memproses", "error"); }
   };
 
+  const updateMemberTier = async (uid, level) => {
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { subscriptionLevel: level });
+      await updateDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), { subscriptionLevel: level });
+      showToast('Status member diperbarui');
+    } catch (err) { showToast('Akses ditolak', 'error'); }
+  };
+
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -241,6 +250,20 @@ export default function App() {
       setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
       setEditingId(null);
     } catch (err) { showToast("Gagal menyimpan", "error"); }
+  };
+
+  const handlePostAnnouncement = async (e) => {
+    e.preventDefault();
+    const msg = e.target.announce.value;
+    if (!msg) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), {
+        message: msg,
+        createdAt: new Date().toISOString()
+      });
+      e.target.reset();
+      showToast("Pengumuman Terkirim");
+    } catch (err) { console.error(err); }
   };
 
   const closeSidebarMobile = () => {
@@ -456,6 +479,17 @@ export default function App() {
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
                 <StatCard label="Terdaftar Sejak" val={userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID', {month:'short', year:'numeric'}) : '-'} icon={<Clock size={28}/>} color="amber" />
               </div>
+
+              {/* Admin Quick Announce */}
+              {isAdmin && (
+                <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+                   <h4 className="font-black uppercase tracking-widest text-xs text-slate-400">Kirim Pengumuman Global</h4>
+                   <form onSubmit={handlePostAnnouncement} className="flex flex-col sm:flex-row gap-3">
+                      <input name="announce" type="text" placeholder="Ketik pesan info baru..." className="flex-1 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white transition-all font-bold text-sm" />
+                      <button type="submit" className="bg-slate-900 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> KIRIM</button>
+                   </form>
+                </div>
+              )}
             </div>
           )}
 
@@ -539,12 +573,12 @@ export default function App() {
                     <p className="text-slate-500 text-sm mt-2">Anda belum melakukan pembelian paket apapun.</p>
                  </div>
                ) : (
-                 <div className="grid grid-cols-1 gap-6">
+                 <div className="grid grid-cols-1 gap-4 sm:gap-6">
                     {transactions.map(t => (
-                      <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm hover:shadow-lg transition-all">
+                      <div key={t.id} className="bg-white p-5 sm:p-8 rounded-[2rem] border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm hover:shadow-lg transition-all">
                          <div className="flex items-center gap-4 sm:gap-6 w-full md:w-auto">
                             <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
-                               {t.status === 'pending' ? <Clock size={28}/> : <CheckCircle size={28}/>}
+                               {t.status === 'pending' ? <Clock size={24} className="sm:w-7 sm:h-7" /> : <CheckCircle size={24} className="sm:w-7 sm:h-7" />}
                             </div>
                             <div className="flex-1 min-w-0">
                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[2px] truncate">{t.id}</p>
@@ -574,7 +608,7 @@ export default function App() {
           {/* TAB 5: ADMIN - MANAGE USERS */}
           {/* ---------------------------------------------------- */}
           {activeTab === 'admin_users' && isAdmin && (
-            <div className="animate-fadeIn space-y-8 sm:space-y-10">
+            <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                   <div>
                     <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member</h2>
@@ -626,7 +660,7 @@ export default function App() {
           {/* TAB 6: ADMIN - TRANSACTIONS */}
           {/* ---------------------------------------------------- */}
           {activeTab === 'admin_trans' && isAdmin && (
-            <div className="animate-fadeIn space-y-8 sm:space-y-10">
+            <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Validasi Pembayaran</h2>
                <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
                   <div className="overflow-x-auto w-full custom-scrollbar">
@@ -810,15 +844,15 @@ export default function App() {
       {/* Global CSS */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
-        .animate-slideUp { animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
+        .animate-slideUp { animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
         .animate-slideInRight { animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        .animate-float { animation: float 5s ease-in-out infinite; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
       `}} />
     </div>
   );
@@ -829,28 +863,24 @@ export default function App() {
 // ==========================================
 function NavBtn({ active, onClick, icon, label, count }) {
   return (
-    <button onClick={onClick} className={`flex items-center justify-between px-5 py-4 w-full rounded-2xl font-black transition-all group ${active ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-[1.02] active:scale-100' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
+    <button onClick={onClick} className={`flex items-center justify-between px-5 py-4 w-full rounded-2xl font-black transition-all group ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-100 scale-[1.03]' : 'text-slate-500 hover:bg-slate-50'}`}>
       <div className="flex items-center gap-4">
-        <div className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-110'}`}>{icon}</div>
+        <div className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:text-indigo-600'}`}>{icon}</div>
         <span className="text-sm tracking-tight">{label}</span>
       </div>
-      {count > 0 && !active && <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
+      {count !== undefined && !active && <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
     </button>
   );
 }
 
 function StatCard({ label, val, icon, color }) {
-  const colors = { 
-    emerald: 'bg-emerald-50 text-emerald-600', 
-    indigo: 'bg-indigo-50 text-indigo-600', 
-    amber: 'bg-amber-50 text-amber-600' 
-  };
+  const colors = { emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100', indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100', amber: 'bg-amber-50 text-amber-600 border-amber-100' };
   return (
-    <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-5 sm:gap-6 group hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-      <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[1.5rem] flex items-center justify-center transition-transform group-hover:rotate-6 group-hover:scale-110 ${colors[color]}`}>{icon}</div>
+    <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-5 sm:gap-6 group hover:shadow-2xl hover:-translate-y-2 transition-all duration-500">
+      <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[1.75rem] flex items-center justify-center transition-all group-hover:rotate-6 ${colors[color]} border-2`}>{icon}</div>
       <div>
-        <p className="text-slate-400 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1 sm:mb-2">{label}</p>
-        <p className="text-xl sm:text-2xl font-black text-slate-800 font-['Outfit'] tracking-tight truncate">{val}</p>
+        <p className="text-slate-400 text-[9px] sm:text-[10px] font-black uppercase tracking-[3px] mb-1 sm:mb-2">{label}</p>
+        <p className="text-xl sm:text-2xl font-black text-slate-800 font-['Outfit'] tracking-tighter">{val}</p>
       </div>
     </div>
   );
@@ -859,32 +889,33 @@ function StatCard({ label, val, icon, color }) {
 function ProFileCard({ file, currentTier }) {
   const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
-    <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl' : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
-      <div className="flex justify-between items-start mb-6 sm:mb-8 relative z-10">
-        <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? 'bg-indigo-50 text-indigo-600 group-hover:scale-110' : 'bg-slate-200 text-slate-400'}`}>
+    <div className={`bg-white rounded-[2rem] sm:rounded-[3rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-400 hover:shadow-3xl' : 'border-slate-200 opacity-60 bg-slate-50'} p-6 sm:p-10 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
+      {isAccessible && <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-sky-400"></div>}
+      <div className="flex justify-between items-start mb-6 sm:mb-10 relative z-10">
+        <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.5rem] sm:rounded-[1.75rem] flex items-center justify-center transition-all duration-500 shadow-xl ${isAccessible ? 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white' : 'bg-slate-200 text-slate-400'}`}>
           {file.category === 'Ebook' ? <FileText size={24} className="sm:w-7 sm:h-7"/> : file.category === 'Video' ? <Video size={24} className="sm:w-7 sm:h-7"/> : <Box size={24} className="sm:w-7 sm:h-7"/>}
         </div>
         {!isAccessible && (
-          <div className="bg-white text-rose-500 text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1.5 border border-rose-100 shadow-sm">
-            <Lock size={12}/> TERKUNCI
+          <div className="bg-rose-100 text-rose-600 text-[9px] font-black px-3 sm:px-4 py-1.5 sm:py-2 rounded-full uppercase tracking-tighter flex items-center gap-1.5 sm:gap-2 border border-rose-200 shadow-sm">
+            <Lock size={12} className="sm:w-3.5 sm:h-3.5"/> TERKUNCI
           </div>
         )}
       </div>
-      <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-8 flex-1 relative z-10">
+      <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-10 flex-1 relative z-10">
         <p className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-[2px]">{file.category}</p>
-        <h4 className="text-lg sm:text-xl font-black text-slate-900 font-['Outfit'] leading-tight tracking-tight group-hover:text-indigo-600 transition-colors line-clamp-2">{file.name}</h4>
+        <h4 className="text-lg sm:text-2xl font-black text-slate-900 font-['Outfit'] leading-[1.1] tracking-tight group-hover:text-indigo-600 transition-colors line-clamp-2">{file.name}</h4>
       </div>
-      <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8 text-[10px] sm:text-[11px] font-bold text-slate-700 relative z-10">
-         <div className="flex justify-between items-center border-b border-slate-100 pb-2"><span className="text-slate-400 uppercase tracking-widest">Ukuran</span><span>{file.size}</span></div>
-         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Akses Tier</span><span className={`px-2 py-1 rounded-md ${isAccessible ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{TIER_LEVELS[file.reqLevel]?.name.toUpperCase() || 'FREE'}</span></div>
+      <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-10 text-[10px] sm:text-[11px] font-bold text-slate-700 relative z-10">
+         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Ukuran</span><span>{file.size}</span></div>
+         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Syarat Tier</span><span className={isAccessible ? 'text-emerald-500' : 'text-rose-500'}>{TIER_LEVELS[file.reqLevel]?.name.toUpperCase() || 'FREE'}</span></div>
       </div>
       <div className="relative z-10 mt-auto">
         {isAccessible ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] shadow-xl transition-all hover:bg-indigo-600 active:scale-95 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
-            <Download size={18}/> DOWNLOAD
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 sm:bg-indigo-600 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.75rem] shadow-xl sm:shadow-2xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-2 active:translate-y-0 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
+            <Download size={18} className="sm:w-5 sm:h-5"/> UNDUH SEKARANG
           </a>
         ) : (
-          <div className="w-full bg-slate-200 text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-300">Harus Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
+          <div className="w-full bg-slate-100 sm:bg-slate-200 text-slate-400 sm:text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.75rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-200 sm:border-slate-300">Minimal Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
         )}
       </div>
     </div>
