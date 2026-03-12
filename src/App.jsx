@@ -25,7 +25,7 @@ import {
 // ==========================================
 // 1. KONFIGURASI SISTEM FIREBASE
 // ==========================================
-const firebaseConfig = {
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
   authDomain: "memberarea-websiteku.firebaseapp.com",
   projectId: "memberarea-websiteku",
@@ -123,8 +123,9 @@ export default function App() {
   const userPoints = useMemo(() => {
     let pts = userData?.rewardPoints || 0;
     if (completedFiles.length) pts += completedFiles.length * 50; 
+    if (affiliateBalance) pts += Math.floor(affiliateBalance / 10000); 
     return pts;
-  }, [completedFiles, userData?.rewardPoints]);
+  }, [completedFiles, affiliateBalance, userData?.rewardPoints]);
 
   const userRank = useMemo(() => {
     if(userPoints >= 1000) return { name: 'Diamond', color: 'text-purple-600', bg: 'bg-purple-100', border:'border-purple-200', icon: <Crown size={14}/> };
@@ -202,8 +203,9 @@ export default function App() {
     showToast("Berhasil disalin ke clipboard!");
   };
 
+  // FIX 1: Mendefinisikan fungsi openWhatsAppConfirmation yang sebelumnya hilang
   const openWhatsAppConfirmation = (data) => {
-    const text = `Halo Admin, konfirmasi pembayaran.%0A%0APaket: ${data.name}%0AHarga: Rp ${data.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
+    const text = `Halo Admin, saya ingin konfirmasi pembayaran.%0A%0APaket: ${data.name}%0AHarga: Rp ${data.price.toLocaleString('id-ID')}%0A%0A_Berikut saya lampirkan bukti transfer:_`;
     window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
   };
 
@@ -220,7 +222,6 @@ export default function App() {
   // REAL-TIME SYNC & TIMER ENGINE
   // ==========================================
   useEffect(() => {
-    // Affiliate Tracking
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
     if (refCode) localStorage.setItem('affiliate_ref_v12', refCode);
@@ -259,7 +260,6 @@ export default function App() {
     const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), (s) => setChatMessages(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     
-    // Sinkronisasi Live Activity Ticker (Limit 1 terbaru)
     const unsubAct = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'activities'), orderBy('createdAt', 'desc'), limit(1)), (s) => {
         if(!s.empty) {
             const data = s.docs[0].data();
@@ -305,15 +305,15 @@ export default function App() {
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(25) });
            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(25) });
            showToast("Sesi Fokus Selesai! Anda mendapatkan +25 Poin Reward 🏆", "success");
-           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} baru saja menyelesaikan sesi Deep Work! 🧠`, 'focus');
+           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan sesi Deep Work! 🧠`, 'focus');
            
            setFocusMode('break');
-           setFocusTimeLeft(5 * 60); // Waktu istirahat 5 menit
+           setFocusTimeLeft(5 * 60); 
        } catch(e) { showToast("Gagal menyimpan poin sesi", "error"); }
     } else {
        showToast("Waktu istirahat selesai. Saatnya kembali fokus!", "success");
        setFocusMode('work');
-       setFocusTimeLeft(25 * 60); // Kembali ke kerja 25 menit
+       setFocusTimeLeft(25 * 60); 
     }
   };
 
@@ -337,7 +337,6 @@ export default function App() {
   // LOGIC ACTIONS (API)
   // ==========================================
   
-  // -- Auth --
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!isConfigReady) return showToast("Config Firebase belum diisi!", "error");
@@ -362,11 +361,11 @@ export default function App() {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
         showToast("Selamat Datang!");
       }
-    } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial.", "error"); }
+    } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
     setAuthLoading(false);
   };
 
-  // -- Profile & Gamification --
+  // FIX 2: Function handlers dipanggil secara tepat
   const handleDailyCheckIn = async () => {
     const today = new Date().toDateString();
     if (userData?.lastCheckInDate === today) return showToast("Sudah klaim hari ini.", "error");
@@ -377,6 +376,7 @@ export default function App() {
     } catch (e) { showToast("Error klaim poin", "error"); }
   };
 
+  // FIX 3: Tambahkan param 'fileName' agar tidak error saat dipanggil oleh onClick di ProFileCard
   const handleToggleFileProgress = async (fileId, fileName) => {
     try {
         const isDoneNow = !completedFiles.includes(fileId);
@@ -385,7 +385,7 @@ export default function App() {
         
         if(isDoneNow) {
             showToast("Materi selesai! +50 Poin Reward", "success");
-            logActivity(`${userData?.name?.split(' ')[0]} menyelesaikan materi: ${fileName} 📚`, 'learn');
+            logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan materi: ${fileName} 📚`, 'learn');
         }
     } catch(e) { showToast("Gagal simpan progress", "error"); }
   };
@@ -399,7 +399,6 @@ export default function App() {
     } catch(err) { showToast("Gagal update profil", "error"); }
   };
 
-  // -- Store / Upgrade System --
   const handlePurchaseRequest = async (e) => {
     e.preventDefault();
     if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Form harus lengkap!", "error");
@@ -443,7 +442,6 @@ export default function App() {
     } catch (err) { showToast("Error database", "error"); }
   };
 
-  // -- Coupons System --
   const handleCreateCoupon = async (e) => {
     e.preventDefault();
     if(!couponForm.code || !couponForm.discount) return;
@@ -471,7 +469,6 @@ export default function App() {
     else { setAppliedCoupon(null); showToast("Kupon tidak valid.", "error"); }
   };
 
-  // -- Affiliate Withdrawals --
   const handleRequestWithdrawal = async () => {
     if (!userData?.bank || !userData?.accountNo) return showToast("Lengkapi profil bank dulu!", "error");
     if (affiliateBalance < 100000) return showToast("Min penarikan Rp 100rb", "error");
@@ -481,7 +478,6 @@ export default function App() {
             userId: user.uid, userName: userData?.name, bank: userData.bank, accountNo: userData.accountNo, 
             amount, status: 'pending', createdAt: new Date().toISOString()
         });
-        // Secure negative increment
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: increment(-amount) });
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: increment(-amount) });
         logActivity(`${userData?.name?.split(' ')[0]} menarik komisi Rp ${amount.toLocaleString()} 💸`, 'withdraw');
@@ -500,7 +496,6 @@ export default function App() {
     } catch(e) { showToast("Gagal memproses", "error"); }
   }
 
-  // -- Chat & Support --
   const handleSendChat = async (e) => {
     e.preventDefault();
     if(!chatInput.trim()) return;
@@ -547,7 +542,6 @@ export default function App() {
     catch (err) { showToast("Gagal menghapus", "error"); }
   }
 
-  // -- AI Mentor --
   const handleAiSubmit = (e) => {
     e.preventDefault();
     if(!aiInput.trim()) return;
@@ -569,7 +563,6 @@ export default function App() {
     }, 1200);
   };
 
-  // -- Admin Master Config --
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -610,7 +603,7 @@ export default function App() {
   const handleExportCSV = () => {
     const headers = ["Nama", "Email", "WA", "Tier", "Saldo"];
     const rows = [headers.join(",")];
-    filteredUsers.forEach(u => rows.push([`"${u.name}"`, `"${u.email}"`, `"${u.phone || ''}"`, `"${TIER_LEVELS[u.subscriptionLevel].name}"`, `"${u.commissionBalance || 0}"`].join(",")));
+    filteredUsers.forEach(u => rows.push([`"${u.name || ''}"`, `"${u.email || ''}"`, `"${u.phone || ''}"`, `"${TIER_LEVELS[u.subscriptionLevel]?.name || 'Free'}"`, `"${u.commissionBalance || 0}"`].join(",")));
     const blob = new Blob([rows.join("\n")], { type: 'text/csv' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -792,7 +785,7 @@ export default function App() {
         </div>
         <div className="p-6 border-t border-slate-100 shrink-0">
           <NavBtn active={activeTab==='profile'} onClick={()=>{setActiveTab('profile'); closeSidebarMobile();}} icon={<Settings size={20}/>} label="Pengaturan Profil" />
-          <button onClick={()=>signOut(auth)} className="flex items-center gap-4 px-5 py-4 w-full rounded-2xl font-bold text-rose-500 hover:bg-rose-50 group">
+          <button onClick={()=>signOut(auth)} className="flex items-center gap-4 px-5 py-4 w-full rounded-2xl font-bold text-rose-500 hover:bg-rose-50 group transition-all mt-2">
             <LogOut size={20} className="group-hover:-translate-x-1 transition-transform"/><span>Keluar Akun</span>
           </button>
         </div>
@@ -1311,8 +1304,8 @@ export default function App() {
         .animate-slideUp { animation: slideUp 0.4s ease-out; }
         .animate-slideInRight { animation: slideInRight 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .animate-float { animation: float 3s ease-in-out infinite; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         @media print { body * { visibility: hidden; } #printable-certificate, #printable-certificate * { visibility: visible; } #printable-certificate { position: absolute; left: 0; top: 0; width: 100%; } }
       `}} />
     </div>
