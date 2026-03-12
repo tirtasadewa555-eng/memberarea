@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -27,7 +27,7 @@ import {
   ShieldCheck, CreditCard, Settings, Menu, X, Bell, Trash2, Edit3, ChevronRight, 
   FileText, Video, Box, Lock, MessageSquare, Banknote, CheckCircle, Clock, 
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
-  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, CheckSquare, Square
+  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, CheckSquare, Square, Award, Sparkles, Crown
 } from 'lucide-react';
 
 // ==========================================
@@ -42,7 +42,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: "1:9418923099:web:f0275b81b802c08bb3737e"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v8-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v9-system';
 const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -84,11 +84,12 @@ export default function App() {
   const [tickets, setTickets] = useState([]); 
   const [withdrawals, setWithdrawals] = useState([]); 
   const [coupons, setCoupons] = useState([]); 
+  const [chatMessages, setChatMessages] = useState([]); // Community Chat State
   
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
-  const [selectedUserDetail, setSelectedUserDetail] = useState(null); // State untuk Admin CRM Modal
+  const [selectedUserDetail, setSelectedUserDetail] = useState(null); 
   
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [searchFileQuery, setSearchFileQuery] = useState('');
@@ -99,6 +100,7 @@ export default function App() {
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
   const [confirmForm, setConfirmForm] = useState({ senderName: '', senderBank: '', notes: '' });
   const [couponForm, setCouponForm] = useState({ code: '', discount: '' }); 
+  const [chatInput, setChatInput] = useState('');
   
   const [profileForm, setProfileForm] = useState({ phone: '', bank: '', accountNo: '' });
   const [editingId, setEditingId] = useState(null);
@@ -106,11 +108,27 @@ export default function App() {
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
 
+  const chatEndRef = useRef(null);
+
   const currentTier = userData?.subscriptionLevel || 0;
   const affiliateBalance = userData?.commissionBalance || 0;
-  const completedFiles = userData?.completedFiles || []; // State untuk progress file
+  const completedFiles = userData?.completedFiles || [];
 
-  // Filter Search
+  // Gamification Logic (Points & Ranks)
+  const userPoints = useMemo(() => {
+    let pts = 0;
+    if (completedFiles.length) pts += completedFiles.length * 50; // 50 poin per materi selesai
+    if (affiliateBalance) pts += Math.floor(affiliateBalance / 10000); // 1 poin per 10rb komisi
+    return pts;
+  }, [completedFiles, affiliateBalance]);
+
+  const userRank = useMemo(() => {
+    if(userPoints >= 1000) return { name: 'Diamond', color: 'text-purple-600', bg: 'bg-purple-100', border:'border-purple-200', icon: <Crown size={14}/> };
+    if(userPoints >= 300) return { name: 'Gold', color: 'text-amber-600', bg: 'bg-amber-100', border:'border-amber-200', icon: <Star size={14}/> };
+    if(userPoints >= 100) return { name: 'Silver', color: 'text-slate-600', bg: 'bg-slate-200', border:'border-slate-300', icon: <Award size={14}/> };
+    return { name: 'Bronze', color: 'text-orange-700', bg: 'bg-orange-100', border:'border-orange-200', icon: <Sparkles size={14}/> };
+  }, [userPoints]);
+
   const filteredUsers = useMemo(() => {
     if (!searchUserQuery) return [...allUsers].sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
     const q = searchUserQuery.toLowerCase();
@@ -122,7 +140,10 @@ export default function App() {
     return files.filter(f => f.name && f.name.toLowerCase().includes(searchFileQuery.toLowerCase()));
   }, [files, searchFileQuery]);
 
-  // Admin Stats
+  const sortedChat = useMemo(() => {
+    return [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+  }, [chatMessages]);
+
   const adminStats = useMemo(() => {
     const totalRev = transactions.filter(t => t.status === 'approved').reduce((acc, curr) => acc + curr.price, 0);
     const pendingTrans = transactions.filter(t => t.status === 'pending').length;
@@ -131,7 +152,6 @@ export default function App() {
     return { totalRev, pendingTrans, openTickets, pendingWd };
   }, [transactions, tickets, withdrawals]);
 
-  // Leaderboard Calculation
   const leaderboardData = useMemo(() => {
     const earnings = {};
     allUsers.forEach(u => {
@@ -149,7 +169,6 @@ export default function App() {
         .slice(0, 10);
   }, [allUsers, withdrawals]);
 
-  // Progress Tracker Calculation
   const progressData = useMemo(() => {
     const accessible = files.filter(f => currentTier >= f.reqLevel);
     if(accessible.length === 0) return 0;
@@ -178,13 +197,20 @@ export default function App() {
     showToast("Link Referral berhasil disalin!");
   };
 
+  // Scroll to bottom on new chat
+  useEffect(() => {
+    if (activeTab === 'community') {
+       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [sortedChat, activeTab]);
+
   // ==========================================
   // REAL-TIME SYNC
   // ==========================================
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
-    if (refCode) localStorage.setItem('affiliate_ref_v7', refCode);
+    if (refCode) localStorage.setItem('affiliate_ref_v9', refCode);
 
     if (!isConfigReady) { setLoading(false); return; }
     const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } };
@@ -213,6 +239,11 @@ export default function App() {
     const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+    
+    // Sinkronisasi Live Chat
+    const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), (s) => {
+       setChatMessages(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     let unsubTrans = () => {}; let unsubTickets = () => {}; let unsubWd = () => {}; let adminUnsub = () => {};
 
@@ -227,7 +258,7 @@ export default function App() {
       unsubWd = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), where('userId', '==', user.uid)), (s) => setWithdrawals(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     }
 
-    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
+    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
   }, [user, isAdmin]);
 
   // ==========================================
@@ -240,7 +271,7 @@ export default function App() {
     try {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const storedRef = localStorage.getItem('affiliate_ref_v7'); 
+        const storedRef = localStorage.getItem('affiliate_ref_v9'); 
         
         const init = { 
             name: formData.name, email: formData.email, subscriptionLevel: 0, 
@@ -250,7 +281,7 @@ export default function App() {
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         
-        localStorage.removeItem('affiliate_ref_v7');
+        localStorage.removeItem('affiliate_ref_v9');
         showToast("Registrasi Berhasil!");
       } else {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
@@ -279,10 +310,36 @@ export default function App() {
             newCompleted = newCompleted.filter(id => id !== fileId);
         } else {
             newCompleted.push(fileId);
+            showToast("Materi ditandai selesai! +50 Poin Reward", "success");
         }
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { completedFiles: newCompleted });
-    } catch(e) {
-        showToast("Gagal menyimpan progress.", "error");
+    } catch(e) { showToast("Gagal menyimpan progress.", "error"); }
+  };
+
+  // SEND CHAT (COMMUNITY)
+  const handleSendChat = async (e) => {
+    e.preventDefault();
+    if(!chatInput.trim()) return;
+    try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), {
+            userId: user.uid,
+            userName: userData?.name || user?.email?.split('@')[0] || 'Member',
+            text: chatInput,
+            isAdmin: isAdmin,
+            rankName: userRank.name,
+            rankBg: userRank.bg,
+            rankColor: userRank.color,
+            createdAt: new Date().toISOString()
+        });
+        setChatInput('');
+    } catch(e) { showToast('Gagal mengirim pesan', 'error'); }
+  };
+
+  const handleDeleteChat = async (id) => {
+    if(window.confirm('Hapus pesan ini dari komunitas?')) {
+        try {
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'globalChat', id));
+        } catch(e) { showToast('Gagal menghapus pesan', 'error'); }
     }
   };
 
@@ -388,7 +445,6 @@ export default function App() {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
           
-          // Affiliate Injection
           const targetUser = allUsers.find(u => u.uid === trans.userId);
           if (targetUser && targetUser.referredBy) {
               const commAmount = trans.price * 0.20; 
@@ -572,7 +628,7 @@ export default function App() {
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
               <NavBtn active={activeTab==='admin_wd'} onClick={()=>{setActiveTab('admin_wd'); closeSidebarMobile();}} icon={<Wallet size={20}/>} label="Pencairan Dana" count={adminStats.pendingWd} />
               <NavBtn active={activeTab==='admin_coupons'} onClick={()=>{setActiveTab('admin_coupons'); closeSidebarMobile();}} icon={<Tag size={20}/>} label="Kelola Kupon" />
-              <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
+              <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
               <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member CRM" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
               <div className="my-6 border-b border-slate-100"></div>
@@ -581,12 +637,13 @@ export default function App() {
 
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Menu Member</p>
           <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
+          <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Komunitas VIP" />
           <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="Katalog Materi" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
           <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
           <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20}/>} label="Program Afiliasi" />
-          <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20}/>} label="Leaderboard" />
-          <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Pusat Bantuan" />
+          <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20}/>} label="Leaderboard Marketer" />
+          <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Tiket Bantuan" />
         </div>
 
         <div className="p-6 border-t border-slate-100 shrink-0">
@@ -610,9 +667,13 @@ export default function App() {
              </div>
           </div>
           <div className="flex items-center gap-4 sm:gap-6">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-black text-slate-900 leading-tight">{userData?.name || user?.email?.split('@')[0] || 'Member'}</p>
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isAdmin ? 'text-indigo-600' : TIER_LEVELS[currentTier].color}`}>{isAdmin ? 'Super Admin' : TIER_LEVELS[currentTier].name}</p>
+            <div className="text-right hidden sm:block flex items-center gap-3">
+              <div>
+                <p className="text-sm font-black text-slate-900 leading-tight">{userData?.name || user?.email?.split('@')[0] || 'Member'}</p>
+                <div className="flex items-center justify-end gap-1 mt-0.5">
+                   {isAdmin ? <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Super Admin</span> : <span className={`text-[8px] px-2 rounded-full uppercase tracking-widest font-black ${userRank.bg} ${userRank.color} flex items-center gap-1`}>{userRank.icon} {userRank.name}</span>}
+                </div>
+              </div>
             </div>
             <div className="h-10 w-10 sm:h-12 sm:w-12 bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white rounded-2xl sm:rounded-full flex items-center justify-center font-black text-sm sm:text-base shadow-lg shadow-indigo-200 cursor-pointer hover:scale-105 transition-transform" onClick={()=>setActiveTab('profile')}>
               {userData?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
@@ -744,7 +805,7 @@ export default function App() {
                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Dashboard {TIER_LEVELS[currentTier].name}</span>
                     </div>
                     <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] tracking-tight leading-[1.1]">Hai, {userData?.name?.split(' ')[0] || user?.email?.split('@')[0]}! 👋</h2>
-                    <p className="text-slate-400 text-base sm:text-lg lg:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">Selamat datang di member area. Tingkatkan terus kompetensi digital Anda dengan menyelesaikan modul kami.</p>
+                    <p className="text-slate-400 text-base sm:text-lg lg:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">Selamat datang di member area. Tingkatkan terus kompetensi digital Anda dengan menyelesaikan modul dan kumpulkan poin reward.</p>
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
                        <button onClick={()=>setActiveTab('files')} className="w-full sm:w-auto bg-white text-slate-900 px-8 py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black shadow-xl hover:scale-105 transition-all text-sm sm:text-base">MULAI BELAJAR</button>
                        {currentTier < 3 && (
@@ -756,7 +817,6 @@ export default function App() {
                      <div className="w-48 h-48 sm:w-64 sm:h-64 bg-white/5 rounded-[2rem] sm:rounded-[3rem] border border-white/10 flex flex-col items-center justify-center gap-3 sm:gap-4 backdrop-blur-xl shadow-2xl relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent rounded-[2rem] sm:rounded-[3rem] pointer-events-none"></div>
                         
-                        {/* Progress Bar Gamification */}
                         <div className="relative w-28 h-28 sm:w-32 sm:h-32 mb-2">
                            <svg className="w-full h-full" viewBox="0 0 36 36">
                               <path className="text-white/10" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -775,8 +835,9 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-                <StatCard label="Total Modul Terbuka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
+                <StatCard label="Poin Reward" val={userPoints + " PTS"} icon={<Award size={28}/>} color="purple" />
+                <StatCard label="Total Produk Buka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
                 <StatCard label="Saldo Afiliasi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
               </div>
@@ -784,7 +845,76 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: FILES (CATALOG) DENGAN PROGRESS */}
+          {/* TAB: COMMUNITY (LIVE CHAT) - NEW FEATURE! */}
+          {/* ==================================================== */}
+          {activeTab === 'community' && (
+             <div className="animate-fadeIn h-[calc(100vh-140px)] flex flex-col">
+                <div className="mb-6 shrink-0">
+                  <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tight text-slate-900">Komunitas VIP</h2>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Ruang diskusi dan tanya jawab real-time sesama member dan Admin.</p>
+                </div>
+                
+                <div className="flex-1 bg-white rounded-[2rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden relative">
+                   <div className="p-4 sm:p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                      <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center"><MessageCircle size={20}/></div>
+                         <div>
+                            <h4 className="font-black text-slate-800 leading-tight">Live Chatroom</h4>
+                            <p className="text-[10px] font-bold text-emerald-500 flex items-center gap-1"><span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> {allUsers.length} Member Tergabung</p>
+                         </div>
+                      </div>
+                   </div>
+                   
+                   <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-slate-50/50 flex flex-col gap-4 custom-scrollbar">
+                      {sortedChat.length === 0 ? (
+                         <div className="m-auto text-center text-slate-400">
+                             <MessageSquare size={48} className="mx-auto mb-4 opacity-50"/>
+                             <p className="font-bold">Belum ada obrolan. Jadilah yang pertama menyapa!</p>
+                         </div>
+                      ) : (
+                         sortedChat.map(msg => {
+                            const isMe = msg.userId === user?.uid;
+                            const isMsgAdmin = msg.isAdmin;
+                            return (
+                                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
+                                    <div className={`max-w-[85%] sm:max-w-[70%] rounded-[1.5rem] p-4 sm:p-5 relative ${isMsgAdmin ? 'bg-indigo-600 text-white rounded-tl-none shadow-md' : isMe ? 'bg-emerald-500 text-white rounded-tr-none shadow-md' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none shadow-sm'}`}>
+                                       
+                                       {isAdmin && !isMe && (
+                                         <button onClick={()=>handleDeleteChat(msg.id)} className="absolute -right-10 top-1/2 -translate-y-1/2 p-2 text-rose-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
+                                       )}
+
+                                       {!isMe && (
+                                           <div className="flex items-center gap-2 mb-2">
+                                              <span className={`text-xs font-black ${isMsgAdmin ? 'text-indigo-200' : 'text-slate-500'}`}>{msg.userName}</span>
+                                              {isMsgAdmin ? (
+                                                 <span className="text-[8px] bg-indigo-500 border border-indigo-400 px-2 py-0.5 rounded-full uppercase tracking-widest text-white flex items-center gap-1"><ShieldCheck size={10}/> ADMIN</span>
+                                              ) : (
+                                                 msg.rankName && <span className={`text-[8px] px-2 py-0.5 rounded-full uppercase tracking-widest border font-black ${msg.rankBg} ${msg.rankColor} ${msg.rankBorder}`}>{msg.rankName}</span>
+                                              )}
+                                           </div>
+                                       )}
+                                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                       <p className={`text-[9px] text-right mt-2 font-bold ${isMsgAdmin || isMe ? 'text-white/70' : 'text-slate-400'}`}>{new Date(msg.createdAt).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</p>
+                                    </div>
+                                </div>
+                            )
+                         })
+                      )}
+                      <div ref={chatEndRef} />
+                   </div>
+
+                   <form onSubmit={handleSendChat} className="p-4 sm:p-6 bg-white border-t border-slate-100 flex gap-3 shrink-0">
+                       <input type="text" placeholder="Ketik pesan Anda di sini..." className="flex-1 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm" value={chatInput} onChange={e=>setChatInput(e.target.value)} required />
+                       <button type="submit" className="bg-indigo-600 text-white px-6 sm:px-8 py-4 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shrink-0">
+                          <span className="hidden sm:inline">KIRIM</span> <Send size={18}/>
+                       </button>
+                   </form>
+                </div>
+             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: FILES (CATALOG) */}
           {/* ==================================================== */}
           {activeTab === 'files' && (
              <div className="animate-fadeIn space-y-6 sm:space-y-10">
@@ -814,6 +944,7 @@ export default function App() {
                           currentTier={currentTier} 
                           isCompleted={completedFiles.includes(f.id)}
                           onToggleProgress={() => handleToggleFileProgress(f.id)}
+                          onReview={() => showToast("Fitur ulasan dalam pengembangan.", "success")}
                        />
                      ))}
                   </div>
@@ -852,7 +983,6 @@ export default function App() {
                                   </div>
                                   <div className="ml-4 sm:ml-6 flex-1 min-w-0">
                                      <h4 className="font-black text-slate-900 text-base sm:text-lg truncate">
-                                        {/* Sensor nama member jika dilihat oleh member lain, tampilkan full jika Admin */}
                                         {isAdmin ? (lb.name || 'Member') : (lb.name ? lb.name.split(' ')[0] + ' ***' : 'Member ***')}
                                         {lb.uid === user?.uid && <span className="ml-2 text-[10px] bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full uppercase tracking-widest">Anda</span>}
                                      </h4>
@@ -1584,8 +1714,9 @@ export default function App() {
         .animate-slideUp { animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
         .animate-slideInRight { animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
         .animate-float { animation: float 5s ease-in-out infinite; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       `}} />
     </div>
   );
@@ -1610,7 +1741,8 @@ function StatCard({ label, val, icon, color }) {
   const colors = { 
     emerald: 'bg-emerald-50 text-emerald-600', 
     indigo: 'bg-indigo-50 text-indigo-600', 
-    amber: 'bg-amber-50 text-amber-600' 
+    amber: 'bg-amber-50 text-amber-600',
+    purple: 'bg-purple-50 text-purple-600'
   };
   return (
     <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-5 sm:gap-6 group hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
@@ -1623,7 +1755,7 @@ function StatCard({ label, val, icon, color }) {
   );
 }
 
-function ProFileCard({ file, currentTier, isCompleted, onToggleProgress }) {
+function ProFileCard({ file, currentTier, isCompleted, onToggleProgress, onReview }) {
   const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
     <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? (isCompleted ? 'border-emerald-300 shadow-lg' : 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl') : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
