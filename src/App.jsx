@@ -18,6 +18,9 @@ import {
   deleteDoc, 
   addDoc, 
   serverTimestamp,
+  query,
+  orderBy,
+  where
 } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
@@ -124,15 +127,23 @@ export default function App() {
 
   const currentTier = userData?.subscriptionLevel || 0;
 
-  // Filtered Data (Admin Realtime Users)
+  // Filtered Data (Admin Realtime Users) - Diperkuat anti-crash
   const filteredUsers = useMemo(() => {
+    if (!searchUserQuery) {
+       return [...allUsers].sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
+    }
+    const q = searchUserQuery.toLowerCase();
     return allUsers
-      .filter(u => u.name?.toLowerCase().includes(searchUserQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchUserQuery.toLowerCase()))
-      .sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0)); // Urutkan member terbaru di atas
+      .filter(u => 
+         (u.name && u.name.toLowerCase().includes(q)) || 
+         (u.email && u.email.toLowerCase().includes(q))
+      )
+      .sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
   }, [allUsers, searchUserQuery]);
 
   const filteredFiles = useMemo(() => {
-    return files.filter(f => f.name?.toLowerCase().includes(searchFileQuery.toLowerCase()));
+    if (!searchFileQuery) return files;
+    return files.filter(f => f.name && f.name.toLowerCase().includes(searchFileQuery.toLowerCase()));
   }, [files, searchFileQuery]);
 
   // Admin Stats
@@ -159,45 +170,54 @@ export default function App() {
 
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setIsAdmin(u?.email === ADMIN_EMAIL);
-      if (u?.email === ADMIN_EMAIL && activeTab === 'dashboard') {
-          setActiveTab('admin_overview'); // Auto redirect admin to admin overview
+      const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+      setIsAdmin(checkIsAdmin);
+      
+      if (checkIsAdmin && activeTab === 'dashboard') {
+          setActiveTab('admin_overview');
       }
       setLoading(false);
     });
     return () => unsubAuth();
   }, []);
 
-  // DATA SYNC REALTIME
+  // DATA SYNC REALTIME - Diperkuat dengan try-catch dan where query
   useEffect(() => {
     if (!user || !isConfigReady) return;
 
     const unsubProfile = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
       if (d.exists()) setUserData(d.data());
-    });
+    }, (err) => console.error("Error Sync Profile:", err));
 
     const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => {
       setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error("Error Sync Files:", err));
 
     const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => {
       setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error("Error Sync Announce:", err));
 
-    let transRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
-    const unsubTrans = onSnapshot(transRef, (s) => {
-      const allTrans = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (user.email === ADMIN_EMAIL) {
-        setTransactions(allTrans);
-      } else {
-        setTransactions(allTrans.filter(t => t.userId === user.uid));
-      }
-    });
+    // Transaksi dipisah logikanya agar Rules Firestore tidak memblokir akses Member biasa
+    let unsubTrans = () => {};
+    if (isAdmin) {
+      const transRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
+      unsubTrans = onSnapshot(transRef, (s) => {
+        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }, (err) => console.error("Error Sync Admin Trans:", err));
+    } else {
+      const transRef = query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid));
+      unsubTrans = onSnapshot(transRef, (s) => {
+        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }, (err) => console.error("Error Sync User Trans:", err));
+    }
 
     let adminUnsub = () => {};
-    if (user.email === ADMIN_EMAIL) {
+    if (isAdmin) {
       adminUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => {
         setAllUsers(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }, (err) => {
+        console.error("Error Sync Registry Admin:", err);
+        showToast("Gagal memuat data member realtime", "error");
       });
     }
 
@@ -212,14 +232,20 @@ export default function App() {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const init = { name: formData.name, email: formData.email, subscriptionLevel: 0, joinDate: new Date().toISOString(), uid: cred.user.uid };
+        
+        // Push ke private dan public registry secara sinkron
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
+        
         showToast("Registrasi Berhasil!");
       } else {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
         showToast("Selamat Datang!");
       }
-    } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
+    } catch (err) { 
+      console.error(err);
+      showToast("Gagal masuk/daftar. Periksa kembali email Anda.", "error"); 
+    }
     setAuthLoading(false);
   };
 
@@ -253,7 +279,6 @@ export default function App() {
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
-          // Tambahan Konfirmasi Keamanan
           if(!window.confirm(`Yakin ingin menerima pembayaran dan UPGRADE INSTAN member ${trans.userName} ke paket ${trans.packageName}?`)) return;
           
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
