@@ -123,9 +123,8 @@ export default function App() {
   const userPoints = useMemo(() => {
     let pts = userData?.rewardPoints || 0;
     if (completedFiles.length) pts += completedFiles.length * 50; 
-    if (affiliateBalance) pts += Math.floor(affiliateBalance / 10000); 
     return pts;
-  }, [completedFiles, affiliateBalance, userData?.rewardPoints]);
+  }, [completedFiles, userData?.rewardPoints]);
 
   const userRank = useMemo(() => {
     if(userPoints >= 1000) return { name: 'Diamond', color: 'text-purple-600', bg: 'bg-purple-100', border:'border-purple-200', icon: <Crown size={14}/> };
@@ -148,15 +147,9 @@ export default function App() {
     return files.filter(f => f.name?.toLowerCase().includes(searchFileQuery.toLowerCase()));
   }, [files, searchFileQuery]);
 
-  const sortedChat = useMemo(() => [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), [chatMessages]);
-
-  const accessibleFiles = useMemo(() => files.filter(f => currentTier >= f.reqLevel), [files, currentTier]);
-  
-  const progressData = useMemo(() => {
-    if(accessibleFiles.length === 0) return 0;
-    const count = completedFiles.filter(id => accessibleFiles.some(f => f.id === id)).length;
-    return Math.round((count / accessibleFiles.length) * 100);
-  }, [accessibleFiles, completedFiles]);
+  const sortedChat = useMemo(() => {
+    return [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+  }, [chatMessages]);
 
   const adminStats = useMemo(() => {
     const approved = transactions.filter(t => t.status === 'approved');
@@ -178,12 +171,19 @@ export default function App() {
         .slice(0, 10);
   }, [allUsers, withdrawals]);
 
+  const accessibleFiles = useMemo(() => files.filter(f => currentTier >= f.reqLevel), [files, currentTier]);
+  
+  const progressData = useMemo(() => {
+    if(accessibleFiles.length === 0) return 0;
+    const count = completedFiles.filter(id => accessibleFiles.some(f => f.id === id)).length;
+    return Math.round((count / accessibleFiles.length) * 100);
+  }, [accessibleFiles, completedFiles]);
+
   const finalPrice = useMemo(() => {
     if (!checkoutPkg) return 0;
     if (appliedCoupon && appliedCoupon.discount) return checkoutPkg.price - (checkoutPkg.price * appliedCoupon.discount / 100);
     return checkoutPkg.price;
   }, [checkoutPkg, appliedCoupon]);
-
 
   // ==========================================
   // UTILITY & HELPERS
@@ -203,9 +203,8 @@ export default function App() {
     showToast("Berhasil disalin ke clipboard!");
   };
 
-  // FIX 1: Mendefinisikan fungsi openWhatsAppConfirmation yang sebelumnya hilang
   const openWhatsAppConfirmation = (data) => {
-    const text = `Halo Admin, saya ingin konfirmasi pembayaran.%0A%0APaket: ${data.name}%0AHarga: Rp ${data.price.toLocaleString('id-ID')}%0A%0A_Berikut saya lampirkan bukti transfer:_`;
+    const text = `Halo Admin, konfirmasi pembayaran.%0A%0APaket: ${data.name}%0AHarga: Rp ${data.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
     window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
   };
 
@@ -216,7 +215,6 @@ export default function App() {
         });
     } catch (e) {}
   };
-
 
   // ==========================================
   // REAL-TIME SYNC & TIMER ENGINE
@@ -305,7 +303,7 @@ export default function App() {
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(25) });
            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(25) });
            showToast("Sesi Fokus Selesai! Anda mendapatkan +25 Poin Reward 🏆", "success");
-           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan sesi Deep Work! 🧠`, 'focus');
+           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} baru saja menyelesaikan sesi Deep Work! 🧠`, 'focus');
            
            setFocusMode('break');
            setFocusTimeLeft(5 * 60); 
@@ -336,7 +334,6 @@ export default function App() {
   // ==========================================
   // LOGIC ACTIONS (API)
   // ==========================================
-  
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!isConfigReady) return showToast("Config Firebase belum diisi!", "error");
@@ -365,7 +362,6 @@ export default function App() {
     setAuthLoading(false);
   };
 
-  // FIX 2: Function handlers dipanggil secara tepat
   const handleDailyCheckIn = async () => {
     const today = new Date().toDateString();
     if (userData?.lastCheckInDate === today) return showToast("Sudah klaim hari ini.", "error");
@@ -376,7 +372,6 @@ export default function App() {
     } catch (e) { showToast("Error klaim poin", "error"); }
   };
 
-  // FIX 3: Tambahkan param 'fileName' agar tidak error saat dipanggil oleh onClick di ProFileCard
   const handleToggleFileProgress = async (fileId, fileName) => {
     try {
         const isDoneNow = !completedFiles.includes(fileId);
@@ -472,16 +467,18 @@ export default function App() {
   const handleRequestWithdrawal = async () => {
     if (!userData?.bank || !userData?.accountNo) return showToast("Lengkapi profil bank dulu!", "error");
     if (affiliateBalance < 100000) return showToast("Min penarikan Rp 100rb", "error");
+    if (withdrawals.some(w => w.status === 'pending')) return showToast("Ada penarikan pending.", "error");
+
     try {
-        const amount = affiliateBalance;
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
-            userId: user.uid, userName: userData?.name, bank: userData.bank, accountNo: userData.accountNo, 
-            amount, status: 'pending', createdAt: new Date().toISOString()
-        });
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: increment(-amount) });
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: increment(-amount) });
-        logActivity(`${userData?.name?.split(' ')[0]} menarik komisi Rp ${amount.toLocaleString()} 💸`, 'withdraw');
-        showToast("Permintaan WD terkirim!");
+      const amount = affiliateBalance;
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
+        userId: user.uid, userName: userData?.name || user?.email || 'Member', bank: userData.bank, 
+        accountNo: userData.accountNo, amount: amount, status: 'pending', createdAt: new Date().toISOString()
+      });
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: increment(-amount) });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: increment(-amount) });
+      logActivity(`${userData?.name?.split(' ')[0]} menarik komisi Rp ${amount.toLocaleString()} 💸`, 'withdraw');
+      showToast("Permintaan WD terkirim!");
     } catch(e) { showToast("Gagal tarik saldo", "error"); }
   };
 
@@ -1198,6 +1195,130 @@ export default function App() {
                   </div>
                </div>
             </div>
+          )}
+
+          {/* TAB: ADMIN KELOLA FILE (FITUR YANG SEMPAT HILANG) */}
+          {activeTab === 'admin_files' && isAdmin && (
+             <div className="animate-fadeIn space-y-10">
+                <h2 className="text-3xl font-black text-slate-900">Kelola Produk & File</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   <div className="lg:col-span-1">
+                      <form onSubmit={handleProductSubmit} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
+                         <h3 className="font-black text-lg text-slate-800">{editingId ? 'Edit Produk' : 'Tambah Produk'}</h3>
+                         <input type="text" placeholder="Nama Produk" value={productForm.name} onChange={e=>setProductForm({...productForm, name:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <select value={productForm.category} onChange={e=>setProductForm({...productForm, category:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm">
+                            <option>Ebook</option><option>Video</option><option>Software</option>
+                         </select>
+                         <input type="text" placeholder="Ukuran (Cth: 15 MB)" value={productForm.size} onChange={e=>setProductForm({...productForm, size:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm">
+                            {[1,2,3].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}
+                         </select>
+                         <input type="url" placeholder="URL Download Asli" value={productForm.url} onChange={e=>setProductForm({...productForm, url:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all">{editingId ? 'SIMPAN EDIT' : 'TAMBAH KE KATALOG'}</button>
+                      </form>
+                   </div>
+                   <div className="lg:col-span-2 space-y-4">
+                      {files.map(f => (
+                         <div key={f.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex justify-between items-center shadow-sm">
+                            <div>
+                               <h4 className="font-black text-slate-900 text-lg">{f.name}</h4>
+                               <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{f.category} • Tier {f.reqLevel}</p>
+                            </div>
+                            <div className="flex gap-2">
+                               <button onClick={()=>{setEditingId(f.id); setProductForm({name:f.name, size:f.size, reqLevel:f.reqLevel, url:f.url, category:f.category}); window.scrollTo({top:0});}} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Edit3 size={16}/></button>
+                               <button onClick={async ()=>{if(window.confirm('Hapus file ini?')) await deleteDoc(doc(db,'artifacts',appId,'public','data','files',f.id));}} className="p-3 bg-rose-50 text-rose-600 rounded-xl"><Trash2 size={16}/></button>
+                            </div>
+                         </div>
+                      ))}
+                   </div>
+                </div>
+             </div>
+          )}
+
+          {/* TAB: ADMIN KELOLA KUPON (FITUR YANG SEMPAT HILANG) */}
+          {activeTab === 'admin_coupons' && isAdmin && (
+             <div className="animate-fadeIn space-y-10">
+                <h2 className="text-3xl font-black text-slate-900">Kelola Kupon Diskon</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   <div className="lg:col-span-1">
+                      <form onSubmit={handleCreateCoupon} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
+                         <h3 className="font-black text-lg text-slate-800">Buat Kupon Baru</h3>
+                         <input type="text" placeholder="Kode Promo (Maks 10 Huruf)" value={couponForm.code} onChange={e=>setCouponForm({...couponForm, code: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm uppercase" required />
+                         <input type="number" placeholder="Diskon (Dalam %)" value={couponForm.discount} onChange={e=>setCouponForm({...couponForm, discount: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all">BUAT KUPON</button>
+                      </form>
+                   </div>
+                   <div className="lg:col-span-2">
+                      <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                         <table className="w-full text-left">
+                            <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
+                               <tr><th className="px-8 py-5">Kode Kupon</th><th className="px-8 py-5">Diskon</th><th className="px-8 py-5 text-center">Tindakan</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                               {coupons.map(c => (
+                                  <tr key={c.id}>
+                                     <td className="px-8 py-6 font-mono font-black text-indigo-600">{c.code}</td>
+                                     <td className="px-8 py-6 font-black">{c.discount}% OFF</td>
+                                     <td className="px-8 py-6 text-center">
+                                        <button onClick={()=>handleDeleteCoupon(c.id)} className="p-3 bg-rose-50 text-rose-600 rounded-xl"><Trash2 size={16}/></button>
+                                     </td>
+                                  </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                      </div>
+                   </div>
+                </div>
+             </div>
+          )}
+
+          {/* TAB: MEMBER HELPDESK & ADMIN SUPPORT (FITUR YANG SEMPAT HILANG) */}
+          {(activeTab === 'support' || activeTab === 'admin_support') && (
+             <div className="animate-fadeIn space-y-10">
+                <h2 className="text-3xl font-black text-slate-900">{isAdmin ? 'Kelola Tiket Bantuan' : 'Pusat Bantuan'}</h2>
+                
+                {!isAdmin && (
+                   <form onSubmit={handleCreateTicket} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5">
+                      <h3 className="font-black text-lg text-slate-800">Buat Tiket Baru</h3>
+                      <input type="text" placeholder="Subjek / Kendala Singkat" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
+                      <textarea placeholder="Jelaskan detail kendala Anda..." rows="4" value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm resize-none" required></textarea>
+                      <button type="submit" className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"><Send size={18}/> KIRIM TIKET</button>
+                   </form>
+                )}
+
+                <div className="space-y-6 mt-8">
+                   {tickets.length === 0 ? (
+                      <p className="text-slate-400 font-bold text-center py-10">Tidak ada tiket bantuan.</p>
+                   ) : (
+                      tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                         <div key={t.id} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden">
+                            {t.status === 'open' && <div className="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>}
+                            {isAdmin && <button onClick={()=>handleDeleteTicket(t.id)} className="absolute top-8 right-8 text-rose-400 hover:text-rose-600"><Trash2 size={18}/></button>}
+                            
+                            <div className="mb-4 pr-10">
+                               <h4 className="font-black text-xl text-slate-900">{t.subject}</h4>
+                               <p className="text-xs font-bold text-slate-400 mt-1">Dari: {t.userName} • {new Date(t.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <p className="text-sm text-slate-700 bg-slate-50 p-5 rounded-xl border border-slate-100">{t.message}</p>
+                            
+                            {t.status === 'open' && isAdmin && (
+                               <form onSubmit={(e) => { e.preventDefault(); handleAdminReplyTicket(t.id, e.target.reply.value); }} className="mt-6 flex gap-3">
+                                  <input name="reply" type="text" placeholder="Tulis solusi untuk member..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none font-bold text-sm" required />
+                                  <button type="submit" className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-700">BALAS</button>
+                               </form>
+                            )}
+
+                            {t.adminReply && (
+                               <div className="mt-6 bg-emerald-50 border border-emerald-100 p-5 rounded-xl">
+                                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Balasan Admin:</p>
+                                  <p className="text-sm font-bold text-emerald-900">{t.adminReply}</p>
+                               </div>
+                            )}
+                         </div>
+                      ))
+                   )}
+                </div>
+             </div>
           )}
 
           {/* TAB: PROFILE */}
