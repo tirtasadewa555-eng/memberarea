@@ -48,7 +48,9 @@ import {
   Megaphone,
   FolderLock,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  Activity,
+  XCircle
 } from 'lucide-react';
 
 // ==========================================
@@ -107,7 +109,10 @@ export default function App() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Search States
+  const [searchUserQuery, setSearchUserQuery] = useState('');
+  const [searchFileQuery, setSearchFileQuery] = useState('');
 
   const [authMode, setAuthMode] = useState('login');
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
@@ -115,6 +120,22 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
 
   const currentTier = userData?.subscriptionLevel || 0;
+
+  // Filtered Data
+  const filteredUsers = useMemo(() => {
+    return allUsers.filter(u => u.name?.toLowerCase().includes(searchUserQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchUserQuery.toLowerCase()));
+  }, [allUsers, searchUserQuery]);
+
+  const filteredFiles = useMemo(() => {
+    return files.filter(f => f.name?.toLowerCase().includes(searchFileQuery.toLowerCase()));
+  }, [files, searchFileQuery]);
+
+  // Admin Stats
+  const adminStats = useMemo(() => {
+    const totalRev = transactions.filter(t => t.status === 'approved').reduce((acc, curr) => acc + curr.price, 0);
+    const pendingTrans = transactions.filter(t => t.status === 'pending').length;
+    return { totalRev, pendingTrans };
+  }, [transactions]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -134,6 +155,9 @@ export default function App() {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setIsAdmin(u?.email === ADMIN_EMAIL);
+      if (u?.email === ADMIN_EMAIL && activeTab === 'dashboard') {
+          setActiveTab('admin_overview'); // Auto redirect admin to admin overview
+      }
       setLoading(false);
     });
     return () => unsubAuth();
@@ -219,12 +243,17 @@ export default function App() {
     } catch (err) { showToast("Gagal membuat pesanan", "error"); }
   };
 
-  const handleApproveTransaction = async (trans) => {
+  const handleTransactionAction = async (trans, action) => {
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
-      await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
-      showToast("Pembayaran Disetujui!");
+      if (action === 'approve') {
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
+          await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
+          showToast("Pembayaran Disetujui & Akses Dibuka!");
+      } else if (action === 'reject') {
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
+          showToast("Pembayaran Ditolak.", "error");
+      }
     } catch (err) { showToast("Gagal memproses", "error"); }
   };
 
@@ -235,6 +264,15 @@ export default function App() {
       showToast('Status member diperbarui');
     } catch (err) { showToast('Akses ditolak', 'error'); }
   };
+
+  const deleteMemberData = async (uid) => {
+    if(!window.confirm("YAKIN HAPUS DATA MEMBER INI? Akses mereka akan hilang.")) return;
+    try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid));
+        // Note: Actual Firebase Auth deletion requires Admin SDK, removing registry acts as ban in UI context.
+        showToast('Data Registry Member Dihapus', 'error');
+    } catch (err) { showToast('Gagal menghapus', 'error'); }
+  }
 
   const handleProductSubmit = async (e) => {
     e.preventDefault();
@@ -262,7 +300,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
       e.target.reset();
-      showToast("Pengumuman Terkirim");
+      showToast("Pengumuman Terkirim Keseluruh Member");
     } catch (err) { console.error(err); }
   };
 
@@ -280,7 +318,7 @@ export default function App() {
       <div className="max-w-5xl w-full bg-white rounded-[2rem] sm:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-100 animate-fadeIn relative">
         {!isConfigReady && <div className="absolute top-0 left-0 w-full bg-rose-500 text-white py-2 text-center text-xs font-bold z-50">API Key Firebase Belum Dikonfigurasi!</div>}
         
-        {/* Left Side - Branding (Hidden on very small screens, visible on md+) */}
+        {/* Left Side - Branding */}
         <div className="hidden md:flex md:w-1/2 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 p-12 text-white flex-col justify-between relative overflow-hidden">
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-white opacity-10 rounded-full blur-3xl"></div>
           <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-400 opacity-20 rounded-full blur-3xl"></div>
@@ -305,7 +343,6 @@ export default function App() {
 
         {/* Right Side - Form */}
         <div className="w-full md:w-1/2 p-8 sm:p-12 lg:p-16 flex flex-col justify-center bg-white relative">
-          {/* Mobile Only Header */}
           <div className="md:hidden text-center mb-8 mt-4">
              <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
                <ShieldCheck size={28} className="text-white"/>
@@ -353,7 +390,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-['Plus_Jakarta_Sans'] flex text-slate-800 relative">
       
-      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 lg:hidden transition-opacity" onClick={()=>setSidebarOpen(false)}></div>
       )}
@@ -368,20 +404,23 @@ export default function App() {
         </div>
         
         <div className="p-6 flex-1 space-y-2 overflow-y-auto custom-scrollbar">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Menu Utama</p>
+          {isAdmin && (
+            <>
+              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Admin Center</p>
+              <NavBtn active={activeTab==='admin_overview'} onClick={()=>{setActiveTab('admin_overview'); closeSidebarMobile();}} icon={<Activity size={20}/>} label="Overview" />
+              <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
+              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Kelola Member" />
+              <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
+              <div className="my-6 border-b border-slate-100"></div>
+            </>
+          )}
+
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Menu Member</p>
           <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
           <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="File Master" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
-          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={transactions.filter(t=>t.status==='pending').length} />
+          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" />
           
-          {isAdmin && (
-            <>
-              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-8 mb-4 px-4">Admin Area</p>
-              <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={transactions.filter(t=>t.status==='pending').length} />
-              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member" />
-              <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
-            </>
-          )}
         </div>
 
         <div className="p-6 border-t border-slate-100 shrink-0">
@@ -401,7 +440,7 @@ export default function App() {
              <button onClick={()=>setSidebarOpen(true)} className="lg:hidden p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"><Menu size={24}/></button>
              <div className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 hidden md:flex items-center gap-2">
                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-               <span className="text-[10px] font-black uppercase tracking-widest">Sistem Aktif</span>
+               <span className="text-[10px] font-black uppercase tracking-widest">{isAdmin ? 'Mode Administrator' : 'Sistem Aktif'}</span>
              </div>
           </div>
           <div className="flex items-center gap-4 sm:gap-6">
@@ -418,7 +457,6 @@ export default function App() {
         {/* PAGE CONTENT */}
         <main className="flex-1 p-4 sm:p-8 lg:p-12 w-full max-w-7xl mx-auto animate-fadeIn pb-32">
           
-          {/* TOAST NOTIFICATION */}
           {toast.show && (
             <div className={`fixed bottom-6 right-6 sm:bottom-10 sm:right-10 z-[100] px-6 py-4 rounded-2xl shadow-2xl font-bold text-white flex items-center gap-3 animate-slideUp border ${toast.type==='error'?'bg-rose-600 border-rose-500':'bg-slate-900 border-slate-700'}`}>
               {toast.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20} className="text-emerald-400"/>} 
@@ -426,23 +464,64 @@ export default function App() {
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 1: DASHBOARD */}
-          {/* ---------------------------------------------------- */}
-          {activeTab === 'dashboard' && (
+          {/* ==================================================== */}
+          {/* TAB: ADMIN OVERVIEW (NEW) */}
+          {/* ==================================================== */}
+          {activeTab === 'admin_overview' && isAdmin && (
+            <div className="space-y-8 animate-fadeIn">
+               <div>
+                  <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Admin Overview</h2>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Ringkasan bisnis dan aktivitas sistem hari ini.</p>
+               </div>
+               
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                 <div className="bg-indigo-600 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl shadow-indigo-200">
+                    <div className="absolute -right-6 -top-6 text-indigo-500 opacity-50"><Banknote size={100}/></div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 relative z-10">Total Pendapatan</p>
+                    <p className="text-3xl font-black mt-2 font-['Outfit'] relative z-10">Rp {adminStats.totalRev.toLocaleString('id-ID')}</p>
+                 </div>
+                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member</p>
+                    <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{allUsers.length}</p>
+                 </div>
+                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Produk</p>
+                    <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{files.length}</p>
+                 </div>
+                 <div className="bg-amber-50 rounded-[2rem] p-8 border border-amber-200 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-amber-100 transition-colors" onClick={()=>setActiveTab('admin_trans')}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Perlu Validasi</p>
+                    <div className="flex items-center gap-3 mt-2">
+                       <p className="text-4xl font-black text-amber-600 font-['Outfit']">{adminStats.pendingTrans}</p>
+                       {adminStats.pendingTrans > 0 && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span></span>}
+                    </div>
+                 </div>
+               </div>
+
+               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+                  <h4 className="font-black uppercase tracking-widest text-xs text-slate-400 flex items-center gap-2"><Megaphone size={16}/> Kirim Pengumuman Global ke Member</h4>
+                  <form onSubmit={handlePostAnnouncement} className="flex flex-col sm:flex-row gap-3">
+                     <input name="announce" type="text" placeholder="Ketik pesan info baru..." className="flex-1 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm" />
+                     <button type="submit" className="bg-slate-900 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> PUBLISH PENGUMUMAN</button>
+                  </form>
+               </div>
+            </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: MEMBER DASHBOARD */}
+          {/* ==================================================== */}
+          {activeTab === 'dashboard' && !isAdmin && (
             <div className="space-y-6 sm:space-y-10 animate-fadeIn">
-              
               {announcements.length > 0 && (
                 <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 p-5 rounded-3xl flex items-start sm:items-center gap-4">
                    <div className="bg-white p-3 rounded-2xl shadow-sm shrink-0"><Megaphone className="text-amber-500" size={24}/></div>
                    <div className="flex-1">
-                     <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Informasi Penting</p>
+                     <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Pesan dari Admin</p>
                      <p className="text-amber-950 font-bold text-sm sm:text-base leading-relaxed">{announcements[announcements.length - 1].message}</p>
                    </div>
                 </div>
               )}
 
-              {/* Hero Banner */}
               <div className="bg-slate-900 rounded-[2rem] sm:rounded-[3rem] p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden shadow-2xl">
                 <div className="absolute top-0 right-0 w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-indigo-500/20 rounded-full blur-[80px] sm:blur-[120px] -mr-20 -mt-20 pointer-events-none"></div>
                 <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-10">
@@ -473,55 +552,48 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Stats Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
                 <StatCard label="Total Produk Buka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
                 <StatCard label="Terdaftar Sejak" val={userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID', {month:'short', year:'numeric'}) : '-'} icon={<Clock size={28}/>} color="amber" />
               </div>
-
-              {/* Admin Quick Announce */}
-              {isAdmin && (
-                <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
-                   <h4 className="font-black uppercase tracking-widest text-xs text-slate-400">Kirim Pengumuman Global</h4>
-                   <form onSubmit={handlePostAnnouncement} className="flex flex-col sm:flex-row gap-3">
-                      <input name="announce" type="text" placeholder="Ketik pesan info baru..." className="flex-1 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white transition-all font-bold text-sm" />
-                      <button type="submit" className="bg-slate-900 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> KIRIM</button>
-                   </form>
-                </div>
-              )}
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 2: FILES (CATALOG) */}
-          {/* ---------------------------------------------------- */}
+          {/* ==================================================== */}
+          {/* TAB: FILES (CATALOG) */}
+          {/* ==================================================== */}
           {activeTab === 'files' && (
              <div className="animate-fadeIn space-y-6 sm:space-y-10">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-slate-200 pb-6 sm:pb-8">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-6 sm:pb-8">
                   <div>
                     <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tight text-slate-900">Perpustakaan Produk</h2>
                     <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Unduh file master sesuai dengan lisensi paket Anda.</p>
                   </div>
+                  {/* Search File Box */}
+                  <div className="relative w-full sm:w-auto">
+                    <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
+                    <input type="text" placeholder="Cari file..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full sm:w-72 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
+                  </div>
                 </div>
                 
-                {files.length === 0 ? (
+                {filteredFiles.length === 0 ? (
                   <div className="py-20 sm:py-32 text-center bg-white rounded-[2rem] sm:rounded-[3rem] border-2 border-dashed border-slate-200 px-4">
                      <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6"><Box size={40} className="text-slate-300"/></div>
-                     <p className="text-slate-800 font-black text-lg sm:text-xl">Katalog Masih Kosong</p>
-                     <p className="text-slate-500 text-sm mt-2">Belum ada produk yang diunggah oleh Administrator.</p>
+                     <p className="text-slate-800 font-black text-lg sm:text-xl">Katalog Kosong</p>
+                     <p className="text-slate-500 text-sm mt-2">Tidak ada file yang sesuai dengan pencarian Anda.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
-                     {files.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} />)}
+                     {filteredFiles.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} />)}
                   </div>
                 )}
              </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 3: SHOP (UPGRADE) */}
-          {/* ---------------------------------------------------- */}
+          {/* ==================================================== */}
+          {/* TAB: SHOP (UPGRADE) */}
+          {/* ==================================================== */}
           {activeTab === 'shop' && (
             <div className="animate-fadeIn space-y-8 sm:space-y-12">
                <div className="text-center max-w-2xl mx-auto space-y-4 px-4">
@@ -560,10 +632,10 @@ export default function App() {
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 4: TRANSACTIONS */}
-          {/* ---------------------------------------------------- */}
-          {activeTab === 'transactions' && (
+          {/* ==================================================== */}
+          {/* TAB: TRANSACTIONS (USER VIEW) */}
+          {/* ==================================================== */}
+          {activeTab === 'transactions' && !isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tight text-slate-900">Riwayat Pembelian</h2>
                {transactions.length === 0 ? (
@@ -575,10 +647,10 @@ export default function App() {
                ) : (
                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
                     {transactions.map(t => (
-                      <div key={t.id} className="bg-white p-5 sm:p-8 rounded-[2rem] border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm hover:shadow-lg transition-all">
+                      <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm hover:shadow-lg transition-all">
                          <div className="flex items-center gap-4 sm:gap-6 w-full md:w-auto">
-                            <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
-                               {t.status === 'pending' ? <Clock size={24} className="sm:w-7 sm:h-7" /> : <CheckCircle size={24} className="sm:w-7 sm:h-7" />}
+                            <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : t.status === 'rejected' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                               {t.status === 'pending' ? <Clock size={28}/> : t.status === 'rejected' ? <XCircle size={28}/> : <CheckCircle size={28}/>}
                             </div>
                             <div className="flex-1 min-w-0">
                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[2px] truncate">{t.id}</p>
@@ -589,11 +661,13 @@ export default function App() {
                          <div className="flex flex-row md:flex-col items-center md:items-end justify-between w-full md:w-auto gap-4 md:gap-3 border-t md:border-none border-slate-100 pt-4 md:pt-0">
                             <div className="text-left md:text-right">
                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:block">Status</p>
-                               <p className={`font-black uppercase text-xs sm:text-sm ${t.status === 'pending' ? 'text-amber-500' : 'text-emerald-500'}`}>{t.status === 'pending' ? 'Menunggu Konfirmasi' : 'Pembayaran Lunas'}</p>
+                               <p className={`font-black uppercase text-xs sm:text-sm ${t.status === 'pending' ? 'text-amber-500' : t.status === 'rejected' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                 {t.status === 'pending' ? 'Menunggu Validasi' : t.status === 'rejected' ? 'Ditolak/Gagal' : 'Pembayaran Lunas'}
+                               </p>
                             </div>
                             {t.status === 'pending' && (
                               <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
-                                <MessageSquare size={16}/> KIRIM BUKTI
+                                <MessageSquare size={16}/> INFO BUKTI KE WA
                               </button>
                             )}
                          </div>
@@ -604,9 +678,9 @@ export default function App() {
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 5: ADMIN - MANAGE USERS */}
-          {/* ---------------------------------------------------- */}
+          {/* ==================================================== */}
+          {/* TAB: ADMIN - MANAGE USERS */}
+          {/* ==================================================== */}
           {activeTab === 'admin_users' && isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
@@ -614,23 +688,28 @@ export default function App() {
                     <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member</h2>
                     <p className="text-slate-500 text-sm mt-1">Kelola dan update manual level akses pengguna.</p>
                   </div>
+                  <div className="relative w-full sm:w-auto">
+                    <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
+                    <input type="text" placeholder="Cari nama / email..." value={searchUserQuery} onChange={e=>setSearchUserQuery(e.target.value)} className="w-full sm:w-80 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
+                  </div>
                </div>
+               
                <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
-                  {/* PENTING: Kontainer tabel diberi overflow-x-auto agar responsif di HP */}
-                  <div className="overflow-x-auto w-full custom-scrollbar">
-                    <table className="w-full text-left min-w-[700px]">
-                      <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <div className="overflow-x-auto w-full custom-scrollbar max-h-[600px]">
+                    <table className="w-full text-left min-w-[800px]">
+                      <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10">
                         <tr>
                           <th className="px-6 sm:px-8 py-5">Nama & Email</th>
                           <th className="px-6 sm:px-8 py-5">Status Paket</th>
-                          <th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin (Ubah Level)</th>
+                          <th className="px-6 sm:px-8 py-5 text-center">Ubah Level</th>
+                          <th className="px-6 sm:px-8 py-5 text-center">Tindakan</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {allUsers.length === 0 ? (
-                           <tr><td colSpan="3" className="px-8 py-16 text-center text-slate-400 font-bold italic">Belum ada member terdaftar.</td></tr>
+                        {filteredUsers.length === 0 ? (
+                           <tr><td colSpan="4" className="px-8 py-16 text-center text-slate-400 font-bold italic">Member tidak ditemukan.</td></tr>
                         ) : (
-                          allUsers.map(m => (
+                          filteredUsers.map(m => (
                             <tr key={m.id} className="hover:bg-slate-50 transition-all">
                               <td className="px-6 sm:px-8 py-4 sm:py-6">
                                  <p className="font-black text-slate-900 text-sm">{m.name || 'User Baru'}</p>
@@ -646,6 +725,9 @@ export default function App() {
                                    ))}
                                  </div>
                               </td>
+                              <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
+                                 <button onClick={()=>deleteMemberData(m.uid)} className="p-2 bg-rose-50 hover:bg-rose-500 text-rose-500 hover:text-white rounded-xl transition-colors inline-flex"><Trash2 size={16}/></button>
+                              </td>
                             </tr>
                           ))
                         )}
@@ -656,32 +738,43 @@ export default function App() {
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 6: ADMIN - TRANSACTIONS */}
-          {/* ---------------------------------------------------- */}
+          {/* ==================================================== */}
+          {/* TAB: ADMIN - TRANSACTIONS */}
+          {/* ==================================================== */}
           {activeTab === 'admin_trans' && isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Validasi Pembayaran</h2>
                <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
                   <div className="overflow-x-auto w-full custom-scrollbar">
-                    <table className="w-full text-left min-w-[700px]">
+                    <table className="w-full text-left min-w-[800px]">
                        <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          <tr><th className="px-6 sm:px-8 py-5">Invoice & Member</th><th className="px-6 sm:px-8 py-5">Tagihan</th><th className="px-6 sm:px-8 py-5">Status</th><th className="px-6 sm:px-8 py-5 text-center">Tindakan</th></tr>
+                          <tr><th className="px-6 sm:px-8 py-5">Invoice & Member</th><th className="px-6 sm:px-8 py-5">Tagihan</th><th className="px-6 sm:px-8 py-5">Status</th><th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin</th></tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {transactions.filter(t => t.status==='pending').length === 0 ? (
-                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">✅ Tidak ada pembayaran tertunda yang perlu divalidasi.</td></tr>
+                          {transactions.length === 0 ? (
+                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">Belum ada data transaksi.</td></tr>
                           ) : (
-                            transactions.filter(t => t.status==='pending').map(t => (
+                            transactions.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
                               <tr key={t.id} className="hover:bg-slate-50 transition-all">
                                  <td className="px-6 sm:px-8 py-6">
                                     <p className="font-black text-slate-900 text-sm">{t.userName}</p>
                                     <p className="text-[10px] text-slate-500 font-bold font-mono mt-1">{t.id}</p>
                                  </td>
-                                 <td className="px-6 sm:px-8 py-6 font-black text-indigo-600 text-sm sm:text-base">Rp {t.price.toLocaleString('id-ID')}</td>
-                                 <td className="px-6 sm:px-8 py-6"><span className="bg-amber-50 border border-amber-200 text-amber-600 px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest">PENDING</span></td>
+                                 <td className="px-6 sm:px-8 py-6 font-black text-indigo-600 text-sm sm:text-base">Rp {t.price.toLocaleString('id-ID')} <span className="block text-[10px] text-slate-400 mt-1 font-sans">{t.packageName}</span></td>
+                                 <td className="px-6 sm:px-8 py-6">
+                                   <span className={`px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${t.status === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-200' : t.status === 'rejected' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                                      {t.status}
+                                   </span>
+                                 </td>
                                  <td className="px-6 sm:px-8 py-6 text-center">
-                                    <button onClick={()=>handleApproveTransaction(t)} className="bg-indigo-600 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-indigo-200 hover:-translate-y-1 transition-all">SETUJUI LUNAS</button>
+                                    {t.status === 'pending' ? (
+                                      <div className="flex justify-center gap-2">
+                                        <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-indigo-200 hover:-translate-y-1 transition-all flex items-center gap-1"><CheckCircle size={14}/> SETUJUI</button>
+                                        <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1"><XCircle size={14}/> TOLAK</button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs font-bold text-slate-400">Selesai</span>
+                                    )}
                                  </td>
                               </tr>
                             ))
@@ -693,9 +786,9 @@ export default function App() {
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB 7: ADMIN - MANAGE FILES */}
-          {/* ---------------------------------------------------- */}
+          {/* ==================================================== */}
+          {/* TAB: ADMIN - MANAGE FILES */}
+          {/* ==================================================== */}
           {activeTab === 'admin_files' && isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-10 animate-fadeIn">
                {/* Form Section */}
@@ -759,7 +852,7 @@ export default function App() {
           )}
 
           {/* ---------------------------------------------------- */}
-          {/* TAB 8: PROFILE */}
+          {/* TAB: PROFILE */}
           {/* ---------------------------------------------------- */}
           {activeTab === 'profile' && (
             <div className="animate-fadeIn max-w-2xl mx-auto md:mx-0">
@@ -847,8 +940,8 @@ export default function App() {
         @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
-        .animate-slideUp { animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-slideUp { animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
         .animate-slideInRight { animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
         .animate-float { animation: float 5s ease-in-out infinite; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
@@ -863,24 +956,28 @@ export default function App() {
 // ==========================================
 function NavBtn({ active, onClick, icon, label, count }) {
   return (
-    <button onClick={onClick} className={`flex items-center justify-between px-5 py-4 w-full rounded-2xl font-black transition-all group ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-100 scale-[1.03]' : 'text-slate-500 hover:bg-slate-50'}`}>
+    <button onClick={onClick} className={`flex items-center justify-between px-5 py-4 w-full rounded-2xl font-black transition-all group ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-100 scale-[1.03] active:scale-100' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
       <div className="flex items-center gap-4">
         <div className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:text-indigo-600'}`}>{icon}</div>
         <span className="text-sm tracking-tight">{label}</span>
       </div>
-      {count !== undefined && !active && <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
+      {count !== undefined && count > 0 && !active && <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
     </button>
   );
 }
 
 function StatCard({ label, val, icon, color }) {
-  const colors = { emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100', indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100', amber: 'bg-amber-50 text-amber-600 border-amber-100' };
+  const colors = { 
+    emerald: 'bg-emerald-50 text-emerald-600', 
+    indigo: 'bg-indigo-50 text-indigo-600', 
+    amber: 'bg-amber-50 text-amber-600' 
+  };
   return (
-    <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-5 sm:gap-6 group hover:shadow-2xl hover:-translate-y-2 transition-all duration-500">
-      <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[1.75rem] flex items-center justify-center transition-all group-hover:rotate-6 ${colors[color]} border-2`}>{icon}</div>
-      <div>
-        <p className="text-slate-400 text-[9px] sm:text-[10px] font-black uppercase tracking-[3px] mb-1 sm:mb-2">{label}</p>
-        <p className="text-xl sm:text-2xl font-black text-slate-800 font-['Outfit'] tracking-tighter">{val}</p>
+    <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex items-center gap-5 sm:gap-6 group hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+      <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[1.5rem] flex items-center justify-center transition-transform group-hover:rotate-6 group-hover:scale-110 ${colors[color]}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-slate-400 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-1 sm:mb-2">{label}</p>
+        <p className="text-xl sm:text-2xl font-black text-slate-800 font-['Outfit'] tracking-tight truncate">{val}</p>
       </div>
     </div>
   );
@@ -889,33 +986,32 @@ function StatCard({ label, val, icon, color }) {
 function ProFileCard({ file, currentTier }) {
   const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
-    <div className={`bg-white rounded-[2rem] sm:rounded-[3rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-400 hover:shadow-3xl' : 'border-slate-200 opacity-60 bg-slate-50'} p-6 sm:p-10 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
-      {isAccessible && <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-sky-400"></div>}
-      <div className="flex justify-between items-start mb-6 sm:mb-10 relative z-10">
-        <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.5rem] sm:rounded-[1.75rem] flex items-center justify-center transition-all duration-500 shadow-xl ${isAccessible ? 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white' : 'bg-slate-200 text-slate-400'}`}>
+    <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl' : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
+      <div className="flex justify-between items-start mb-6 sm:mb-8 relative z-10">
+        <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? 'bg-indigo-50 text-indigo-600 group-hover:scale-110' : 'bg-slate-200 text-slate-400'}`}>
           {file.category === 'Ebook' ? <FileText size={24} className="sm:w-7 sm:h-7"/> : file.category === 'Video' ? <Video size={24} className="sm:w-7 sm:h-7"/> : <Box size={24} className="sm:w-7 sm:h-7"/>}
         </div>
         {!isAccessible && (
-          <div className="bg-rose-100 text-rose-600 text-[9px] font-black px-3 sm:px-4 py-1.5 sm:py-2 rounded-full uppercase tracking-tighter flex items-center gap-1.5 sm:gap-2 border border-rose-200 shadow-sm">
-            <Lock size={12} className="sm:w-3.5 sm:h-3.5"/> TERKUNCI
+          <div className="bg-white text-rose-500 text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1.5 border border-rose-100 shadow-sm">
+            <Lock size={12}/> TERKUNCI
           </div>
         )}
       </div>
-      <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-10 flex-1 relative z-10">
+      <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-8 flex-1 relative z-10">
         <p className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-[2px]">{file.category}</p>
-        <h4 className="text-lg sm:text-2xl font-black text-slate-900 font-['Outfit'] leading-[1.1] tracking-tight group-hover:text-indigo-600 transition-colors line-clamp-2">{file.name}</h4>
+        <h4 className="text-lg sm:text-xl font-black text-slate-900 font-['Outfit'] leading-tight tracking-tight group-hover:text-indigo-600 transition-colors line-clamp-2">{file.name}</h4>
       </div>
-      <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-10 text-[10px] sm:text-[11px] font-bold text-slate-700 relative z-10">
-         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Ukuran</span><span>{file.size}</span></div>
-         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Syarat Tier</span><span className={isAccessible ? 'text-emerald-500' : 'text-rose-500'}>{TIER_LEVELS[file.reqLevel]?.name.toUpperCase() || 'FREE'}</span></div>
+      <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8 text-[10px] sm:text-[11px] font-bold text-slate-700 relative z-10">
+         <div className="flex justify-between items-center border-b border-slate-100 pb-2"><span className="text-slate-400 uppercase tracking-widest">Ukuran</span><span>{file.size}</span></div>
+         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Akses Tier</span><span className={`px-2 py-1 rounded-md ${isAccessible ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{TIER_LEVELS[file.reqLevel]?.name.toUpperCase() || 'FREE'}</span></div>
       </div>
       <div className="relative z-10 mt-auto">
         {isAccessible ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 sm:bg-indigo-600 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.75rem] shadow-xl sm:shadow-2xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-2 active:translate-y-0 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
-            <Download size={18} className="sm:w-5 sm:h-5"/> UNDUH SEKARANG
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] shadow-xl transition-all hover:bg-indigo-600 active:scale-95 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
+            <Download size={18}/> DOWNLOAD
           </a>
         ) : (
-          <div className="w-full bg-slate-100 sm:bg-slate-200 text-slate-400 sm:text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.75rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-200 sm:border-slate-300">Minimal Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
+          <div className="w-full bg-slate-200 text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-300">Harus Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
         )}
       </div>
     </div>
