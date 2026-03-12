@@ -19,7 +19,8 @@ import {
   addDoc, 
   serverTimestamp,
   query,
-  where
+  where,
+  increment
 } from 'firebase/firestore';
 import { 
   LayoutDashboard, ShoppingBag, Users, UserCircle, LogOut, Plus, Search, Download, 
@@ -32,17 +33,16 @@ import {
 // ==========================================
 // 1. KONFIGURASI SISTEM
 // ==========================================
-const firebaseConfig = {
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
   authDomain: "memberarea-websiteku.firebaseapp.com",
   projectId: "memberarea-websiteku",
   storageBucket: "memberarea-websiteku.firebasestorage.app",
   messagingSenderId: "9418923099",
-  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-  measurementId: "G-RQBKYLD4K5"
+  appId: "1:9418923099:web:f0275b81b802c08bb3737e"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v5-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v6-system';
 const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -124,7 +124,7 @@ export default function App() {
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
-    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
+    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3500);
   };
 
   const copyToClipboard = (text) => {
@@ -134,13 +134,20 @@ export default function App() {
     el.select();
     document.execCommand('copy');
     document.body.removeChild(el);
-    showToast("Link berhasil disalin!");
+    showToast("Link Referral berhasil disalin!");
   };
 
   // ==========================================
-  // REAL-TIME SYNC
+  // REAL-TIME SYNC & AFFILIATE TRACKING
   // ==========================================
   useEffect(() => {
+    // Affiliate Link Tracking Logic
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref');
+    if (refCode) {
+      localStorage.setItem('affiliate_ref_v6', refCode);
+    }
+
     if (!isConfigReady) { setLoading(false); return; }
     const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } };
     initAuth();
@@ -193,22 +200,34 @@ export default function App() {
     try {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const init = { name: formData.name, email: formData.email, subscriptionLevel: 0, joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0 };
+        const storedRef = localStorage.getItem('affiliate_ref_v6'); // Cek apakah daftar dari link afiliasi
+        
+        const init = { 
+            name: formData.name, 
+            email: formData.email, 
+            subscriptionLevel: 0, 
+            joinDate: new Date().toISOString(), 
+            uid: cred.user.uid, 
+            commissionBalance: 0,
+            referredBy: storedRef || null // Simpan data referrer di database
+        };
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
+        
+        // Hapus local storage agar tidak nempel selamanya jika daftar akun lain
+        localStorage.removeItem('affiliate_ref_v6');
         showToast("Registrasi Berhasil!");
       } else {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
-        showToast("Selamat Datang!");
+        showToast("Selamat Datang di Member Area!");
       }
     } catch (err) { 
       console.error(err);
-      showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); 
+      showToast("Gagal masuk/daftar. Cek kembali kredensial Anda.", "error"); 
     }
     setAuthLoading(false);
   };
 
-  // PROFILE & AFFILIATE ACTIONS
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     try {
@@ -221,17 +240,7 @@ export default function App() {
     }
   };
 
-  const handleSimulateCommission = async () => {
-    try {
-      const newBalance = affiliateBalance + 150000;
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: newBalance });
-      showToast("Berhasil mensimulasikan penjualan afiliasi (+Rp 150.000)");
-    } catch(e) { 
-      console.error(e);
-      showToast("Gagal simulasi", "error"); 
-    }
-  };
-
+  // AFFILIATE WITHDRAWALS
   const handleRequestWithdrawal = async () => {
     if (!userData?.bank || !userData?.accountNo) return showToast("Lengkapi Nama Bank dan No Rekening di menu Profil terlebih dahulu!", "error");
     if (affiliateBalance < 100000) return showToast("Minimal penarikan komisi adalah Rp 100.000", "error");
@@ -247,8 +256,10 @@ export default function App() {
         status: 'pending', 
         createdAt: new Date().toISOString()
       });
+      // Potong saldo di database secara instan
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: 0 });
-      showToast("Permintaan penarikan berhasil dikirim!");
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: 0 });
+      showToast("Permintaan penarikan berhasil dikirim ke Admin!");
     } catch(e) { 
       console.error(e);
       showToast("Gagal request penarikan", "error"); 
@@ -259,9 +270,12 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
       if (action === 'rejected') {
-         showToast("Pencairan ditolak. Harap update saldo user secara manual jika diperlukan.", "error");
+         // Jika ditolak, kembalikan saldo ke user
+         await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'profile', 'data'), { commissionBalance: increment(amount) });
+         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', userId), { commissionBalance: increment(amount) });
+         showToast("Pencairan ditolak. Saldo telah dikembalikan ke member.", "error");
       } else {
-         showToast("Pencairan dana disetujui & ditandai selesai.");
+         showToast("Pencairan dana ditandai SUKSES DITRANSFER.");
       }
     } catch(e) { 
       console.error(e);
@@ -269,7 +283,7 @@ export default function App() {
     }
   }
 
-  // TRANSACTIONS (UPGRADE)
+  // TRANSACTIONS & AUTO-COMMISSION SYSTEM
   const handlePurchaseRequest = async (e) => {
     e.preventDefault();
     if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Harap lengkapi form konfirmasi!", "error");
@@ -291,9 +305,6 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
       
-      const text = `Halo Admin, konfirmasi pembayaran.%0A%0A*INV: ${transId}*%0ANama: ${userData?.name || 'Member'}%0APaket: ${checkoutPkg.name}%0AHarga: Rp ${checkoutPkg.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
-      window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
-      
       setCheckoutPkg(null);
       setConfirmForm({ senderName: '', senderBank: '', notes: '' });
       showToast("Konfirmasi terkirim! Admin akan segera memvalidasi.");
@@ -307,11 +318,26 @@ export default function App() {
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
-          if(!window.confirm(`Yakin ingin menerima pembayaran dari ${trans.senderName} dan UPGRADE INSTAN ke ${trans.packageName}?`)) return;
+          if(!window.confirm(`Yakin menerima pembayaran dari ${trans.senderName} dan UPGRADE INSTAN ke ${trans.packageName}?`)) return;
+          
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
+          
+          // 1. Upgrade User Tier
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
-          showToast("Pembayaran Disetujui! Akses member telah dibuka.");
+          
+          // 2. Sistem Afiliasi Otomatis (Auto Commission Injection)
+          const targetUser = allUsers.find(u => u.uid === trans.userId);
+          if (targetUser && targetUser.referredBy) {
+              const commAmount = trans.price * 0.20; // Komisi 20%
+              // Tambahkan saldo afiliasi ke referrer
+              await updateDoc(doc(db, 'artifacts', appId, 'users', targetUser.referredBy, 'profile', 'data'), { commissionBalance: increment(commAmount) });
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', targetUser.referredBy), { commissionBalance: increment(commAmount) });
+              showToast(`Sukses! Komisi afiliasi (Rp ${commAmount.toLocaleString('id-ID')}) telah otomatis dikirim ke referrer.`);
+          } else {
+              showToast("Pembayaran Disetujui! Akses member telah dibuka.");
+          }
+
       } else if (action === 'reject') {
           if(!window.confirm(`Tolak pembayaran dari ${trans.userName}?`)) return;
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
@@ -323,7 +349,7 @@ export default function App() {
     }
   };
 
-  // TICKETS (HELPDESK) - DI PERBAIKI AGAR ANTI CRASH
+  // TICKETS (HELPDESK)
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!ticketForm.subject || !ticketForm.message) return;
@@ -349,13 +375,25 @@ export default function App() {
     if (!replyText) return;
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: replyText, updatedAt: new Date().toISOString() });
-      showToast("Balasan terkirim.");
+      showToast("Balasan terkirim dan tiket ditutup.");
     } catch (err) { 
       console.error(err);
       showToast("Gagal membalas tiket", "error"); 
     }
   };
 
+  const handleDeleteTicket = async (ticketId) => {
+    if(!window.confirm("Hapus permanen tiket ini dari sistem?")) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId));
+      showToast("Tiket berhasil dihapus.");
+    } catch (err) {
+      console.error(err);
+      showToast("Gagal menghapus tiket", "error");
+    }
+  }
+
+  // ADMIN SYSTEM CONFIG
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -549,6 +587,7 @@ export default function App() {
         {/* PAGE CONTENT */}
         <main className="flex-1 p-4 sm:p-8 lg:p-12 w-full max-w-7xl mx-auto animate-fadeIn pb-32">
           
+          {/* TOAST POPUP */}
           {toast.show && (
             <div className={`fixed bottom-6 right-6 sm:bottom-10 sm:right-10 z-[100] px-6 py-4 rounded-2xl shadow-2xl font-bold text-white flex items-center gap-3 animate-slideUp border ${toast.type==='error'?'bg-rose-600 border-rose-500':'bg-slate-900 border-slate-700'}`}>
               {toast.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20} className="text-emerald-400"/>} 
@@ -807,11 +846,6 @@ export default function App() {
                                  {t.status === 'pending' ? 'Menunggu Validasi' : t.status === 'rejected' ? 'Ditolak/Gagal' : 'Pembayaran Sukses'}
                                </p>
                             </div>
-                            {t.status === 'pending' && (
-                              <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
-                                <MessageSquare size={16}/> INFO BUKTI KE WA
-                              </button>
-                            )}
                          </div>
                       </div>
                     ))}
@@ -821,7 +855,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN - TRANSACTIONS (VALIDASI) */}
+          {/* TAB: ADMIN - TRANSACTIONS (VALIDASI & AFFILIATE INJECT) */}
           {/* ==================================================== */}
           {activeTab === 'admin_trans' && isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
@@ -884,13 +918,13 @@ export default function App() {
              <div className="animate-fadeIn space-y-8 sm:space-y-10">
                 <div>
                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Program Afiliasi</h2>
-                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Sebarkan link Anda dan dapatkan komisi 20% dari setiap penjualan.</p>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Sebarkan link Anda. Anda akan otomatis mendapat komisi 20% saat pesanan mereka di setujui Admin.</p>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div className="bg-indigo-600 rounded-[2rem] p-8 sm:p-10 text-white relative overflow-hidden shadow-xl shadow-indigo-200 flex flex-col justify-center">
                       <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 relative z-10">Saldo Komisi Aktif</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 relative z-10">Saldo Komisi Tersedia</p>
                       <p className="text-4xl sm:text-5xl font-black mt-2 font-['Outfit'] relative z-10">Rp {affiliateBalance.toLocaleString('id-ID')}</p>
                       <button onClick={handleRequestWithdrawal} className="mt-6 bg-white text-indigo-600 px-6 py-4 rounded-xl font-black text-sm hover:scale-105 transition-transform w-max shadow-lg">TARIK SALDO KE REKENING</button>
                    </div>
@@ -903,8 +937,6 @@ export default function App() {
                       <div className="mt-6 p-4 bg-amber-50 border border-amber-100 rounded-xl">
                          <p className="text-xs font-bold text-amber-800 leading-relaxed">Penting: Lengkapi profil Anda (Nomor WA dan Data Rekening Bank) sebelum melakukan penarikan komisi. Penarikan diproses maks 2x24 jam.</p>
                       </div>
-                      {/* Tombol Simulasi Khusus Demo/Testing */}
-                      <button onClick={handleSimulateCommission} className="mt-4 text-[10px] font-black text-slate-400 underline hover:text-indigo-600 w-max mx-auto md:mx-0">(Dev: Klik Simulasi Tambah Saldo Rp 150k)</button>
                    </div>
                 </div>
 
@@ -1014,14 +1046,18 @@ export default function App() {
                      </div>
                    ) : (
                      [...tickets].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
-                        <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden">
+                        <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden group">
                            {t.status === 'open' && <div className="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>}
-                           <div className="flex justify-between items-start mb-4">
+                           
+                           {/* Tombol Hapus Tiket untuk Admin */}
+                           <button onClick={()=>handleDeleteTicket(t.id)} className="absolute top-6 right-6 p-2 text-rose-300 hover:bg-rose-50 hover:text-rose-500 rounded-xl transition-all opacity-0 group-hover:opacity-100" title="Hapus Tiket"><Trash2 size={18}/></button>
+
+                           <div className="flex justify-between items-start mb-4 pr-10">
                               <div>
                                  <p className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-1 flex items-center gap-2"><UserCircle size={14}/> {t.userName} <span className="text-slate-400 font-normal">({t.userId})</span></p>
                                  <h4 className="font-black text-xl text-slate-900">{t.subject}</h4>
                               </div>
-                              <span className="text-xs font-bold text-slate-400">{new Date(t.createdAt).toLocaleDateString('id-ID')}</span>
+                              <span className="text-xs font-bold text-slate-400 text-right">{new Date(t.createdAt).toLocaleDateString('id-ID')}</span>
                            </div>
                            <p className="text-sm text-slate-700 bg-slate-50 p-5 rounded-2xl border border-slate-100">{t.message}</p>
                            
@@ -1280,7 +1316,7 @@ export default function App() {
                  <form onSubmit={handlePurchaseRequest} className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-200 space-y-4">
                     <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-2 flex items-center gap-2"><Receipt size={16} className="text-indigo-600"/> Form Konfirmasi Transfer</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                       <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
+                       <input type="text" placeholder="Nama Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
                        <input type="text" placeholder="Bank Asal (Misal: BCA)" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
                     </div>
                     <input type="text" placeholder="Catatan / Link Bukti TF (Opsional)" value={confirmForm.notes} onChange={e=>setConfirmForm({...confirmForm, notes: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm" />
