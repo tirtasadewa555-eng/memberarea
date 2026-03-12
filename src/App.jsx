@@ -19,7 +19,7 @@ import {
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
   MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
-  Headphones, PlayCircle, PauseCircle, RefreshCw
+  Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen
 } from 'lucide-react';
 
 // ==========================================
@@ -34,7 +34,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: "1:9418923099:web:f0275b81b802c08bb3737e"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v12-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v13-system';
 const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin Anda
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -48,6 +48,17 @@ const TIER_LEVELS = {
 const BANK_ACCOUNTS = [
   { bank: "BCA", number: "1234 5678 90", owner: "PT DIGITAL SUKSES" },
   { bank: "MANDIRI", number: "0987 6543 21", owner: "ADMIN MEMBERSHIP" }
+];
+
+// Data Bank Soal Edukasi (V13 - Bisa ditambah sesuai kebutuhan)
+const DAILY_QUIZZES = [
+  { q: "Apa kepanjangan dari CTA dalam digital marketing?", options: ["Call To Action", "Click To Add", "Cost To Acquire", "Customer Target Area"], answer: 0, exp: "CTA (Call To Action) adalah instruksi berupa teks atau tombol yang didesain untuk memancing respon langsung dari audiens." },
+  { q: "Manakah metrik yang mengukur persentase pengunjung yang langsung keluar dari website tanpa interaksi?", options: ["Click-Through Rate", "Bounce Rate", "Conversion Rate", "Retention Rate"], answer: 1, exp: "Bounce Rate mengukur persentase sesi satu halaman di mana pengguna keluar tanpa berpindah halaman lain." },
+  { q: "Apa tujuan utama dari A/B Testing?", options: ["Membuat 2 website berbeda", "Membandingkan dua versi untuk melihat mana performa terbaik", "Menaikkan budget iklan", "Menghapus data pengunjung lama"], answer: 1, exp: "A/B Testing digunakan untuk mengambil keputusan berbasis data dengan membandingkan dua variasi (A dan B) pada audiens." },
+  { q: "Dalam SEO, apa yang dimaksud dengan 'Backlink'?", options: ["Link yang rusak di website", "Tautan dari website lain yang mengarah ke website kita", "Tombol kembali ke halaman utama", "Membayar Google agar website naik"], answer: 1, exp: "Backlink (Inbound Link) adalah tautan dari website orang lain yang mengarah ke web kita, sangat penting untuk otoritas SEO." },
+  { q: "Fase pertama dalam sebuah Sales Funnel (Corong Penjualan) biasanya disebut dengan?", options: ["Awareness (Kesadaran)", "Action (Tindakan)", "Desire (Keinginan)", "Retention (Retensi)"], answer: 0, exp: "Fase pertama adalah Awareness, di mana calon pelanggan baru menyadari eksistensi produk/brand Anda." },
+  { q: "Metode menjual produk orang lain dan mendapatkan komisi disebut?", options: ["Dropshipping", "Affiliate Marketing", "MLM", "White Labeling"], answer: 1, exp: "Affiliate Marketing memungkingkan Anda mendapat komisi dari setiap penjualan yang terjadi lewat link unik (referral) Anda." },
+  { q: "Format file apa yang paling direkomendasikan untuk logo dengan background transparan?", options: ["JPG", "MP4", "PNG", "PNG / SVG"], answer: 3, exp: "PNG dan SVG mendukung Alpha Channel (Transparansi), sangat cocok untuk logo dan grafis web." }
 ];
 
 let firebaseApp, auth, db;
@@ -89,7 +100,7 @@ export default function App() {
   const [showCertificate, setShowCertificate] = useState(false); 
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiTyping, setAiTyping] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Halo! Saya ProSpace AI Mentor. Butuh bantuan seputar materi, afiliasi, atau teknis?' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Halo! Saya ProSpace AI Mentor. Butuh bantuan materi, info afiliasi, atau kendala teknis?' }]);
 
   // --- Form States ---
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
@@ -107,9 +118,23 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
 
   // --- Ruang Fokus VIP States (V12) ---
-  const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60); // 25 Menit (dalam detik)
+  const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
   const [isFocusing, setIsFocusing] = useState(false);
-  const [focusMode, setFocusMode] = useState('work'); // 'work' atau 'break'
+  const [focusMode, setFocusMode] = useState('work'); 
+
+  // --- Kuis Edukasi States (V13) ---
+  const todayQuizIndex = useMemo(() => {
+     // Gunakan hari dalam satu tahun agar soal berganti tiap hari
+     const now = new Date();
+     const start = new Date(now.getFullYear(), 0, 0);
+     const diff = (now - start) + ((start.getTimezoneOffset() - now.getTimezoneOffset()) * 60 * 1000);
+     const oneDay = 1000 * 60 * 60 * 24;
+     const day = Math.floor(diff / oneDay);
+     return day % DAILY_QUIZZES.length;
+  }, []);
+  const todayQuiz = DAILY_QUIZZES[todayQuizIndex];
+  const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
+  const [isQuizProcessing, setIsQuizProcessing] = useState(false);
 
   const chatEndRef = useRef(null);
   const aiEndRef = useRef(null);
@@ -119,7 +144,7 @@ export default function App() {
   const affiliateBalance = userData?.commissionBalance || 0;
   const completedFiles = userData?.completedFiles || [];
 
-  // Gamifikasi Poin
+  // Gamifikasi Poin Terintegrasi
   const userPoints = useMemo(() => {
     let pts = userData?.rewardPoints || 0;
     if (completedFiles.length) pts += completedFiles.length * 50; 
@@ -185,6 +210,7 @@ export default function App() {
     return checkoutPkg.price;
   }, [checkoutPkg, appliedCoupon]);
 
+
   // ==========================================
   // UTILITY & HELPERS
   // ==========================================
@@ -216,13 +242,14 @@ export default function App() {
     } catch (e) {}
   };
 
+
   // ==========================================
   // REAL-TIME SYNC & TIMER ENGINE
   // ==========================================
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
-    if (refCode) localStorage.setItem('affiliate_ref_v12', refCode);
+    if (refCode) localStorage.setItem('affiliate_ref_v13', refCode);
 
     if (!isConfigReady) { setLoading(false); return; }
     
@@ -302,14 +329,14 @@ export default function App() {
        try {
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(25) });
            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(25) });
-           showToast("Sesi Fokus Selesai! Anda mendapatkan +25 Poin Reward 🏆", "success");
-           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} baru saja menyelesaikan sesi Deep Work! 🧠`, 'focus');
+           showToast("Sesi Fokus Selesai! +25 Poin 🏆", "success");
+           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan sesi Deep Work! 🧠`, 'focus');
            
            setFocusMode('break');
            setFocusTimeLeft(5 * 60); 
-       } catch(e) { showToast("Gagal menyimpan poin sesi", "error"); }
+       } catch(e) { showToast("Gagal menyimpan poin", "error"); }
     } else {
-       showToast("Waktu istirahat selesai. Saatnya kembali fokus!", "success");
+       showToast("Waktu istirahat habis!", "success");
        setFocusMode('work');
        setFocusTimeLeft(25 * 60); 
     }
@@ -341,16 +368,16 @@ export default function App() {
     try {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const storedRef = localStorage.getItem('affiliate_ref_v12'); 
+        const storedRef = localStorage.getItem('affiliate_ref_v13'); 
         
         const init = { 
             name: formData.name, email: formData.email, subscriptionLevel: 0, 
             joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0,
-            referredBy: storedRef || null, completedFiles: [], rewardPoints: 0, lastCheckInDate: ''
+            referredBy: storedRef || null, completedFiles: [], rewardPoints: 0, lastCheckInDate: '', lastQuizDate: ''
         };
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
-        localStorage.removeItem('affiliate_ref_v12');
+        localStorage.removeItem('affiliate_ref_v13');
         
         logActivity(`${formData.name} baru saja bergabung! 👋`, 'join');
         showToast("Registrasi Berhasil!");
@@ -362,6 +389,7 @@ export default function App() {
     setAuthLoading(false);
   };
 
+  // -- Gamifikasi: Check In Harian --
   const handleDailyCheckIn = async () => {
     const today = new Date().toDateString();
     if (userData?.lastCheckInDate === today) return showToast("Sudah klaim hari ini.", "error");
@@ -370,6 +398,35 @@ export default function App() {
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(10), lastCheckInDate: today });
         showToast("Klaim +10 Poin Harian! 🎉", "success");
     } catch (e) { showToast("Error klaim poin", "error"); }
+  };
+
+  // -- Gamifikasi: Kuis Pintar Edukasi (V13) --
+  const handleAnswerQuiz = async (selectedIndex) => {
+      if (isQuizProcessing) return;
+      const today = new Date().toDateString();
+      if (userData?.lastQuizDate === today) return showToast("Anda sudah ikut kuis hari ini.", "error");
+      
+      setIsQuizProcessing(true);
+      setSelectedQuizAnswer(selectedIndex);
+      const isCorrect = selectedIndex === todayQuiz.answer;
+      const pointEarned = isCorrect ? 20 : 5;
+
+      setTimeout(async () => {
+          try {
+             await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(pointEarned), lastQuizDate: today });
+             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(pointEarned), lastQuizDate: today });
+             
+             if (isCorrect) {
+                 showToast(`Tepat Sekali! Anda dapat +${pointEarned} Poin`, 'success');
+                 logActivity(`${userData?.name?.split(' ')[0]} menjawab Kuis Harian dengan Benar! 🧠`, 'quiz');
+             } else {
+                 showToast(`Jawaban Kurang Tepat. +${pointEarned} Poin partisipasi`, 'error');
+             }
+          } catch(e) {
+             showToast("Koneksi gagal", "error");
+          }
+          setIsQuizProcessing(false);
+      }, 800);
   };
 
   const handleToggleFileProgress = async (fileId, fileName) => {
@@ -553,7 +610,8 @@ export default function App() {
         if(low.includes('halo') || low.includes('hai')) reply = "Halo! Ada yang bisa AI bantu?";
         if(low.includes('komisi') || low.includes('afiliasi')) reply = "Komisi afiliasi sebesar 20% diberikan saat penjualan via link Anda selesai divalidasi. Cek menu Program Afiliasi.";
         if(low.includes('sertifikat')) reply = "Sertifikat terbuka jika progress materi mencapai 100%. Teruslah belajar!";
-        if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via Daily Check-in (+10), Selesai Materi (+50), dan Deep Work di Ruang Fokus (+25 per sesi).";
+        if(low.includes('kuis') || low.includes('belajar')) reply = "Kerjakan Kuis Edukasi setiap hari di menu 'Kuis Pintar' untuk menguji wawasan digital Anda dan dapatkan hingga +20 Poin!";
+        if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via Kuis Pintar (+20), Daily Check-in (+10), Selesai Materi (+50), dan Deep Work di Ruang Fokus (+25 per sesi).";
         
         setAiMessages([...newMsgs, { role: 'ai', text: reply }]);
         setAiTyping(false);
@@ -709,7 +767,7 @@ export default function App() {
       {/* FOMO TICKER */}
       {latestActivity && (
         <div className="fixed bottom-6 left-6 z-[200] max-w-sm bg-white rounded-2xl shadow-3xl border border-slate-100 p-4 flex items-center gap-4 animate-slideInRight">
-           <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${latestActivity.type === 'order' ? 'bg-amber-100 text-amber-600' : latestActivity.type === 'focus' ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
+           <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${latestActivity.type === 'order' ? 'bg-amber-100 text-amber-600' : latestActivity.type === 'focus' || latestActivity.type === 'quiz' ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
               <Zap size={20} className="animate-pulse" />
            </div>
            <p className="text-xs font-bold text-slate-700 leading-tight">{latestActivity.text}</p>
@@ -769,6 +827,10 @@ export default function App() {
             <>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Member Menu</p>
               <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
+              
+              {/* NEW V13 TAB */}
+              <NavBtn active={activeTab==='quiz'} onClick={()=>{setActiveTab('quiz'); closeSidebarMobile();}} icon={<BookOpen size={20}/>} label="Kuis Pintar" />
+              
               <NavBtn active={activeTab==='focus'} onClick={()=>{setActiveTab('focus'); closeSidebarMobile();}} icon={<Headphones size={20}/>} label="Ruang Fokus VIP" />
               <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Komunitas VIP" />
               <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="Katalog Materi" count={files.filter(f=>currentTier>=f.reqLevel).length} />
@@ -839,9 +901,10 @@ export default function App() {
                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{TIER_LEVELS[currentTier].name} Member</span>
                     </div>
                     <h2 className="text-3xl sm:text-5xl font-black font-['Outfit'] tracking-tight leading-tight">Halo, {userData?.name?.split(' ')[0] || 'Member'}! 👋</h2>
-                    <p className="text-slate-400 text-base sm:text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed">Gunakan fitur Ruang Fokus VIP untuk belajar lebih produktif dan dapatkan ekstra poin.</p>
+                    <p className="text-slate-400 text-base sm:text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed">Uji wawasan Anda hari ini di menu <strong>Kuis Pintar</strong> untuk mendapatkan poin tambahan, atau jalankan <strong>Ruang Fokus VIP</strong>.</p>
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
-                       <button onClick={()=>setActiveTab('focus')} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"><Headphones size={18}/> RUANG FOKUS</button>
+                       <button onClick={()=>setActiveTab('quiz')} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"><BookOpen size={18}/> KUIS PINTAR</button>
+                       <button onClick={()=>setActiveTab('files')} className="w-full sm:w-auto bg-white text-slate-900 px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2">KATALOG MATERI</button>
                     </div>
                   </div>
                   <div className="w-full lg:w-1/3 flex justify-center items-center flex-col gap-4">
@@ -864,6 +927,58 @@ export default function App() {
                 <StatCard label="Saldo Komisi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
               </div>
             </div>
+          )}
+
+          {/* TAB: DAILY QUIZ (V13 EDU-GAMIFICATION) */}
+          {activeTab === 'quiz' && !isAdmin && (
+             <div className="animate-fadeIn max-w-3xl mx-auto space-y-8">
+                <div className="text-center space-y-3 mb-10">
+                   <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2"><BookOpen size={32}/></div>
+                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Kuis Pintar Edukasi</h2>
+                   <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Asah wawasan digital Anda setiap hari. Jawab dengan benar dan dapatkan <strong className="text-emerald-600">+20 Poin Reward</strong>, jawab salah tetap dapat <strong className="text-amber-500">+5 Poin</strong> partisipasi.</p>
+                </div>
+
+                <div className="bg-white rounded-[2.5rem] p-8 sm:p-12 border border-slate-200 shadow-2xl relative overflow-hidden">
+                    {userData?.lastQuizDate === new Date().toDateString() ? (
+                        <div className="text-center py-10">
+                            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40}/></div>
+                            <h3 className="text-2xl font-black text-slate-900 mb-2">Anda Sudah Menyelesaikan Kuis Hari Ini!</h3>
+                            <p className="text-slate-500 mb-8">Berikut adalah jawaban dan penjelasan kuis hari ini:</p>
+                            
+                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-left">
+                                <p className="font-bold text-slate-800 mb-4">{todayQuiz.q}</p>
+                                <p className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-1">Jawaban Benar:</p>
+                                <p className="text-slate-700 mb-4">{todayQuiz.options[todayQuiz.answer]}</p>
+                                <p className="text-sm font-black text-indigo-600 uppercase tracking-widest mb-1">Penjelasan Singkat:</p>
+                                <p className="text-slate-600 text-sm leading-relaxed">{todayQuiz.exp}</p>
+                            </div>
+                            <button onClick={()=>setActiveTab('dashboard')} className="mt-8 bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-sm hover:bg-indigo-600 transition-colors">KEMBALI KE DASHBOARD</button>
+                        </div>
+                    ) : (
+                        <div>
+                            <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
+                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-full">KUIS HARI INI</span>
+                                <span className="font-bold text-slate-400 text-xs">{new Date().toLocaleDateString('id-ID')}</span>
+                            </div>
+                            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mb-8 leading-relaxed">{todayQuiz.q}</h3>
+                            <div className="space-y-3">
+                                {todayQuiz.options.map((opt, idx) => (
+                                    <button 
+                                        key={idx} 
+                                        onClick={() => handleAnswerQuiz(idx)}
+                                        disabled={isQuizProcessing}
+                                        className={`w-full text-left p-5 rounded-2xl border-2 font-bold text-sm sm:text-base transition-all hover:border-indigo-600 hover:bg-indigo-50 ${selectedQuizAnswer === idx ? 'border-indigo-600 bg-indigo-50 scale-[1.02]' : 'border-slate-200 bg-white'}`}
+                                    >
+                                        <span className="inline-block w-8 h-8 bg-slate-100 text-slate-500 rounded-full text-center leading-8 mr-4">{['A','B','C','D'][idx]}</span>
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
+                            {isQuizProcessing && <p className="text-center text-sm font-bold text-indigo-600 mt-6 animate-pulse">Menyimpan Poin Anda...</p>}
+                        </div>
+                    )}
+                </div>
+             </div>
           )}
 
           {/* TAB: FOCUS ROOM (V12) */}
@@ -1197,7 +1312,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB: ADMIN KELOLA FILE (FITUR YANG SEMPAT HILANG) */}
+          {/* TAB: ADMIN KELOLA FILE */}
           {activeTab === 'admin_files' && isAdmin && (
              <div className="animate-fadeIn space-y-10">
                 <h2 className="text-3xl font-black text-slate-900">Kelola Produk & File</h2>
@@ -1235,7 +1350,7 @@ export default function App() {
              </div>
           )}
 
-          {/* TAB: ADMIN KELOLA KUPON (FITUR YANG SEMPAT HILANG) */}
+          {/* TAB: ADMIN KELOLA KUPON */}
           {activeTab === 'admin_coupons' && isAdmin && (
              <div className="animate-fadeIn space-y-10">
                 <h2 className="text-3xl font-black text-slate-900">Kelola Kupon Diskon</h2>
@@ -1272,7 +1387,7 @@ export default function App() {
              </div>
           )}
 
-          {/* TAB: MEMBER HELPDESK & ADMIN SUPPORT (FITUR YANG SEMPAT HILANG) */}
+          {/* TAB: MEMBER HELPDESK & ADMIN SUPPORT */}
           {(activeTab === 'support' || activeTab === 'admin_support') && (
              <div className="animate-fadeIn space-y-10">
                 <h2 className="text-3xl font-black text-slate-900">{isAdmin ? 'Kelola Tiket Bantuan' : 'Pusat Bantuan'}</h2>
