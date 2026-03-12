@@ -27,7 +27,7 @@ import {
   ShieldCheck, CreditCard, Settings, Menu, X, Bell, Trash2, Edit3, ChevronRight, 
   FileText, Video, Box, Lock, MessageSquare, Banknote, CheckCircle, Clock, 
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
-  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt
+  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, CheckSquare, Square
 } from 'lucide-react';
 
 // ==========================================
@@ -42,7 +42,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: "1:9418923099:web:f0275b81b802c08bb3737e"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v6-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v8-system';
 const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -83,10 +83,12 @@ export default function App() {
   const [announcements, setAnnouncements] = useState([]);
   const [tickets, setTickets] = useState([]); 
   const [withdrawals, setWithdrawals] = useState([]); 
+  const [coupons, setCoupons] = useState([]); 
   
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
+  const [selectedUserDetail, setSelectedUserDetail] = useState(null); // State untuk Admin CRM Modal
   
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [searchFileQuery, setSearchFileQuery] = useState('');
@@ -96,13 +98,19 @@ export default function App() {
   const [productForm, setProductForm] = useState({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
   const [confirmForm, setConfirmForm] = useState({ senderName: '', senderBank: '', notes: '' });
+  const [couponForm, setCouponForm] = useState({ code: '', discount: '' }); 
   
   const [profileForm, setProfileForm] = useState({ phone: '', bank: '', accountNo: '' });
   const [editingId, setEditingId] = useState(null);
 
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+
   const currentTier = userData?.subscriptionLevel || 0;
   const affiliateBalance = userData?.commissionBalance || 0;
+  const completedFiles = userData?.completedFiles || []; // State untuk progress file
 
+  // Filter Search
   const filteredUsers = useMemo(() => {
     if (!searchUserQuery) return [...allUsers].sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
     const q = searchUserQuery.toLowerCase();
@@ -114,6 +122,7 @@ export default function App() {
     return files.filter(f => f.name && f.name.toLowerCase().includes(searchFileQuery.toLowerCase()));
   }, [files, searchFileQuery]);
 
+  // Admin Stats
   const adminStats = useMemo(() => {
     const totalRev = transactions.filter(t => t.status === 'approved').reduce((acc, curr) => acc + curr.price, 0);
     const pendingTrans = transactions.filter(t => t.status === 'pending').length;
@@ -121,6 +130,38 @@ export default function App() {
     const pendingWd = withdrawals.filter(w => w.status === 'pending').length;
     return { totalRev, pendingTrans, openTickets, pendingWd };
   }, [transactions, tickets, withdrawals]);
+
+  // Leaderboard Calculation
+  const leaderboardData = useMemo(() => {
+    const earnings = {};
+    allUsers.forEach(u => {
+        earnings[u.uid] = { uid: u.uid, name: u.name, balance: u.commissionBalance || 0, totalWithdrawn: 0 };
+    });
+    withdrawals.forEach(w => {
+        if (w.status === 'approved' && earnings[w.userId]) {
+            earnings[w.userId].totalWithdrawn += w.amount;
+        }
+    });
+    return Object.values(earnings)
+        .map(e => ({ ...e, totalEarned: e.balance + e.totalWithdrawn }))
+        .filter(e => e.totalEarned > 0)
+        .sort((a, b) => b.totalEarned - a.totalEarned)
+        .slice(0, 10);
+  }, [allUsers, withdrawals]);
+
+  // Progress Tracker Calculation
+  const progressData = useMemo(() => {
+    const accessible = files.filter(f => currentTier >= f.reqLevel);
+    if(accessible.length === 0) return 0;
+    const completedAccessFiles = completedFiles.filter(id => accessible.some(f => f.id === id));
+    return Math.round((completedAccessFiles.length / accessible.length) * 100);
+  }, [files, currentTier, completedFiles]);
+
+  const finalPrice = useMemo(() => {
+    if (!checkoutPkg) return 0;
+    if (appliedCoupon && appliedCoupon.discount) return checkoutPkg.price - (checkoutPkg.price * appliedCoupon.discount / 100);
+    return checkoutPkg.price;
+  }, [checkoutPkg, appliedCoupon]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -138,19 +179,17 @@ export default function App() {
   };
 
   // ==========================================
-  // REAL-TIME SYNC & AFFILIATE TRACKING
+  // REAL-TIME SYNC
   // ==========================================
   useEffect(() => {
-    // Affiliate Link Tracking Logic
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
-    if (refCode) {
-      localStorage.setItem('affiliate_ref_v6', refCode);
-    }
+    if (refCode) localStorage.setItem('affiliate_ref_v7', refCode);
 
     if (!isConfigReady) { setLoading(false); return; }
     const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } };
     initAuth();
+    
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
@@ -173,6 +212,7 @@ export default function App() {
 
     const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+    const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
     let unsubTrans = () => {}; let unsubTickets = () => {}; let unsubWd = () => {}; let adminUnsub = () => {};
 
@@ -187,7 +227,7 @@ export default function App() {
       unsubWd = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), where('userId', '==', user.uid)), (s) => setWithdrawals(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     }
 
-    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
+    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
   }, [user, isAdmin]);
 
   // ==========================================
@@ -200,22 +240,17 @@ export default function App() {
     try {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const storedRef = localStorage.getItem('affiliate_ref_v6'); // Cek apakah daftar dari link afiliasi
+        const storedRef = localStorage.getItem('affiliate_ref_v7'); 
         
         const init = { 
-            name: formData.name, 
-            email: formData.email, 
-            subscriptionLevel: 0, 
-            joinDate: new Date().toISOString(), 
-            uid: cred.user.uid, 
-            commissionBalance: 0,
-            referredBy: storedRef || null // Simpan data referrer di database
+            name: formData.name, email: formData.email, subscriptionLevel: 0, 
+            joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0,
+            referredBy: storedRef || null, completedFiles: []
         };
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         
-        // Hapus local storage agar tidak nempel selamanya jika daftar akun lain
-        localStorage.removeItem('affiliate_ref_v6');
+        localStorage.removeItem('affiliate_ref_v7');
         showToast("Registrasi Berhasil!");
       } else {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
@@ -234,13 +269,24 @@ export default function App() {
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), profileForm);
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), profileForm);
       showToast("Profil berhasil diperbarui!");
-    } catch(err) { 
-      console.error(err);
-      showToast("Gagal mengupdate profil", "error"); 
+    } catch(err) { showToast("Gagal mengupdate profil", "error"); }
+  };
+
+  const handleToggleFileProgress = async (fileId) => {
+    try {
+        let newCompleted = [...completedFiles];
+        if (newCompleted.includes(fileId)) {
+            newCompleted = newCompleted.filter(id => id !== fileId);
+        } else {
+            newCompleted.push(fileId);
+        }
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { completedFiles: newCompleted });
+    } catch(e) {
+        showToast("Gagal menyimpan progress.", "error");
     }
   };
 
-  // AFFILIATE WITHDRAWALS
+  // AFFILIATE
   const handleRequestWithdrawal = async () => {
     if (!userData?.bank || !userData?.accountNo) return showToast("Lengkapi Nama Bank dan No Rekening di menu Profil terlebih dahulu!", "error");
     if (affiliateBalance < 100000) return showToast("Minimal penarikan komisi adalah Rp 100.000", "error");
@@ -248,42 +294,65 @@ export default function App() {
 
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
-        userId: user.uid, 
-        userName: userData?.name || user?.email || 'Member', 
-        bank: userData.bank, 
-        accountNo: userData.accountNo, 
-        amount: affiliateBalance, 
-        status: 'pending', 
-        createdAt: new Date().toISOString()
+        userId: user.uid, userName: userData?.name || user?.email || 'Member', bank: userData.bank, 
+        accountNo: userData.accountNo, amount: affiliateBalance, status: 'pending', createdAt: new Date().toISOString()
       });
-      // Potong saldo di database secara instan
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: 0 });
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: 0 });
       showToast("Permintaan penarikan berhasil dikirim ke Admin!");
-    } catch(e) { 
-      console.error(e);
-      showToast("Gagal request penarikan", "error"); 
-    }
+    } catch(e) { showToast("Gagal request penarikan", "error"); }
   };
 
   const handleAdminWithdrawalAction = async (wdId, action, userId, amount) => {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
       if (action === 'rejected') {
-         // Jika ditolak, kembalikan saldo ke user
          await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'profile', 'data'), { commissionBalance: increment(amount) });
          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', userId), { commissionBalance: increment(amount) });
          showToast("Pencairan ditolak. Saldo telah dikembalikan ke member.", "error");
       } else {
          showToast("Pencairan dana ditandai SUKSES DITRANSFER.");
       }
-    } catch(e) { 
-      console.error(e);
-      showToast("Gagal memproses", "error"); 
-    }
+    } catch(e) { showToast("Gagal memproses", "error"); }
   }
 
-  // TRANSACTIONS & AUTO-COMMISSION SYSTEM
+  // COUPONS SYSTEM (ADMIN)
+  const handleCreateCoupon = async (e) => {
+    e.preventDefault();
+    if(!couponForm.code || !couponForm.discount) return;
+    try {
+       const codeUpper = couponForm.code.toUpperCase().replace(/\s+/g, '');
+       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'coupons', codeUpper), {
+          id: codeUpper, code: codeUpper, discount: parseInt(couponForm.discount), active: true, createdAt: new Date().toISOString()
+       });
+       setCouponForm({code: '', discount: ''});
+       showToast("Kupon Diskon berhasil dibuat!");
+    } catch(err) { showToast("Gagal membuat kupon", "error"); }
+  };
+
+  const handleDeleteCoupon = async (couponId) => {
+    if(!window.confirm("Yakin ingin menghapus kupon ini?")) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'coupons', couponId));
+      showToast("Kupon dihapus!");
+    } catch(err) { showToast("Gagal menghapus kupon", "error"); }
+  };
+
+  const handleApplyCoupon = (e) => {
+    e.preventDefault();
+    const codeFormat = couponInput.toUpperCase().replace(/\s+/g, '');
+    const found = coupons.find(c => c.code === codeFormat && c.active);
+    
+    if (found) {
+       setAppliedCoupon(found);
+       showToast(`Kupon ${found.discount}% berhasil diterapkan!`);
+    } else {
+       setAppliedCoupon(null);
+       showToast("Kode Kupon tidak valid atau sudah kadaluarsa.", "error");
+    }
+  };
+
+  // TRANSACTIONS
   const handlePurchaseRequest = async (e) => {
     e.preventDefault();
     if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Harap lengkapi form konfirmasi!", "error");
@@ -291,84 +360,64 @@ export default function App() {
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), {
-        id: transId, 
-        userId: user.uid, 
-        userName: userData?.name || user?.email || 'Member', 
-        userEmail: user.email, 
-        packageLevel: checkoutPkg.level, 
-        packageName: checkoutPkg.name, 
-        price: checkoutPkg.price, 
-        senderName: confirmForm.senderName, 
-        senderBank: confirmForm.senderBank, 
-        notes: confirmForm.notes, 
-        status: 'pending', 
-        createdAt: new Date().toISOString()
+        id: transId, userId: user.uid, userName: userData?.name || user?.email || 'Member', userEmail: user.email, 
+        packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, 
+        price: finalPrice, 
+        promoCode: appliedCoupon ? appliedCoupon.code : null,
+        senderName: confirmForm.senderName, senderBank: confirmForm.senderBank, notes: confirmForm.notes, 
+        status: 'pending', createdAt: new Date().toISOString()
       });
       
+      const text = `Halo Admin, konfirmasi pembayaran.%0A%0A*INV: ${transId}*%0ANama: ${userData?.name || 'Member'}%0APaket: ${checkoutPkg.name}%0AHarga: Rp ${finalPrice.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
+      window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
+      
       setCheckoutPkg(null);
+      setAppliedCoupon(null);
       setConfirmForm({ senderName: '', senderBank: '', notes: '' });
       showToast("Konfirmasi terkirim! Admin akan segera memvalidasi.");
       setActiveTab('transactions');
-    } catch (err) { 
-      console.error(err);
-      showToast("Gagal mengirim konfirmasi", "error"); 
-    }
+    } catch (err) { showToast("Gagal mengirim konfirmasi", "error"); }
   };
 
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
           if(!window.confirm(`Yakin menerima pembayaran dari ${trans.senderName} dan UPGRADE INSTAN ke ${trans.packageName}?`)) return;
-          
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
           
-          // 1. Upgrade User Tier
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
           
-          // 2. Sistem Afiliasi Otomatis (Auto Commission Injection)
+          // Affiliate Injection
           const targetUser = allUsers.find(u => u.uid === trans.userId);
           if (targetUser && targetUser.referredBy) {
-              const commAmount = trans.price * 0.20; // Komisi 20%
-              // Tambahkan saldo afiliasi ke referrer
+              const commAmount = trans.price * 0.20; 
               await updateDoc(doc(db, 'artifacts', appId, 'users', targetUser.referredBy, 'profile', 'data'), { commissionBalance: increment(commAmount) });
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', targetUser.referredBy), { commissionBalance: increment(commAmount) });
-              showToast(`Sukses! Komisi afiliasi (Rp ${commAmount.toLocaleString('id-ID')}) telah otomatis dikirim ke referrer.`);
+              showToast(`Sukses! Komisi afiliasi otomatis dikirim ke referrer.`);
           } else {
               showToast("Pembayaran Disetujui! Akses member telah dibuka.");
           }
-
       } else if (action === 'reject') {
           if(!window.confirm(`Tolak pembayaran dari ${trans.userName}?`)) return;
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
           showToast("Pembayaran Ditolak.", "error");
       }
-    } catch (err) { 
-      console.error(err);
-      showToast("Gagal memproses transaksi", "error"); 
-    }
+    } catch (err) { showToast("Gagal memproses transaksi", "error"); }
   };
 
-  // TICKETS (HELPDESK)
+  // TICKETS
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!ticketForm.subject || !ticketForm.message) return;
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), {
-        userId: user.uid, 
-        userName: userData?.name || user?.email || 'Member', 
-        subject: ticketForm.subject, 
-        message: ticketForm.message, 
-        status: 'open', 
-        adminReply: '', 
-        createdAt: new Date().toISOString()
+        userId: user.uid, userName: userData?.name || user?.email || 'Member', subject: ticketForm.subject, 
+        message: ticketForm.message, status: 'open', adminReply: '', createdAt: new Date().toISOString()
       });
       setTicketForm({ subject: '', message: '' });
       showToast("Tiket berhasil dikirim. Tim kami akan merespon.");
-    } catch (err) { 
-      console.error("Error creating ticket:", err);
-      showToast("Gagal mengirim tiket", "error"); 
-    }
+    } catch (err) { showToast("Gagal mengirim tiket", "error"); }
   };
 
   const handleAdminReplyTicket = async (ticketId, replyText) => {
@@ -376,10 +425,7 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: replyText, updatedAt: new Date().toISOString() });
       showToast("Balasan terkirim dan tiket ditutup.");
-    } catch (err) { 
-      console.error(err);
-      showToast("Gagal membalas tiket", "error"); 
-    }
+    } catch (err) { showToast("Gagal membalas tiket", "error"); }
   };
 
   const handleDeleteTicket = async (ticketId) => {
@@ -387,10 +433,7 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId));
       showToast("Tiket berhasil dihapus.");
-    } catch (err) {
-      console.error(err);
-      showToast("Gagal menghapus tiket", "error");
-    }
+    } catch (err) { showToast("Gagal menghapus tiket", "error"); }
   }
 
   // ADMIN SYSTEM CONFIG
@@ -407,10 +450,7 @@ export default function App() {
       }
       setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
       setEditingId(null);
-    } catch (err) { 
-      console.error(err);
-      showToast("Gagal menyimpan", "error"); 
-    }
+    } catch (err) { showToast("Gagal menyimpan", "error"); }
   };
 
   const updateMemberTier = async (uid, level) => {
@@ -419,10 +459,7 @@ export default function App() {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { subscriptionLevel: level });
       await updateDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), { subscriptionLevel: level });
       showToast('Status member diperbarui secara realtime.');
-    } catch (err) { 
-      console.error(err);
-      showToast('Akses ditolak', 'error'); 
-    }
+    } catch (err) { showToast('Akses ditolak', 'error'); }
   };
 
   const deleteMemberData = async (uid) => {
@@ -430,10 +467,7 @@ export default function App() {
     try {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid));
         showToast('Data Registry Member Dihapus', 'error');
-    } catch (err) { 
-        console.error(err);
-        showToast('Gagal menghapus', 'error'); 
-    }
+    } catch (err) { showToast('Gagal menghapus', 'error'); }
   };
 
   const handlePostAnnouncement = async (e) => {
@@ -537,8 +571,9 @@ export default function App() {
               <NavBtn active={activeTab==='admin_overview'} onClick={()=>{setActiveTab('admin_overview'); closeSidebarMobile();}} icon={<Activity size={20}/>} label="Overview" />
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
               <NavBtn active={activeTab==='admin_wd'} onClick={()=>{setActiveTab('admin_wd'); closeSidebarMobile();}} icon={<Wallet size={20}/>} label="Pencairan Dana" count={adminStats.pendingWd} />
+              <NavBtn active={activeTab==='admin_coupons'} onClick={()=>{setActiveTab('admin_coupons'); closeSidebarMobile();}} icon={<Tag size={20}/>} label="Kelola Kupon" />
               <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
-              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member Realtime" />
+              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member CRM" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
               <div className="my-6 border-b border-slate-100"></div>
             </>
@@ -546,10 +581,11 @@ export default function App() {
 
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Menu Member</p>
           <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
-          <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="File Master" count={files.filter(f=>currentTier>=f.reqLevel).length} />
+          <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="Katalog Materi" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
           <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
           <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20}/>} label="Program Afiliasi" />
+          <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20}/>} label="Leaderboard" />
           <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Pusat Bantuan" />
         </div>
 
@@ -708,21 +744,31 @@ export default function App() {
                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Dashboard {TIER_LEVELS[currentTier].name}</span>
                     </div>
                     <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] tracking-tight leading-[1.1]">Hai, {userData?.name?.split(' ')[0] || user?.email?.split('@')[0]}! 👋</h2>
-                    <p className="text-slate-400 text-base sm:text-lg lg:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">Kelola bisnis digital Anda. Akses semua file master, panduan, dan lisensi eksklusif di Pustaka Produk.</p>
+                    <p className="text-slate-400 text-base sm:text-lg lg:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">Selamat datang di member area. Tingkatkan terus kompetensi digital Anda dengan menyelesaikan modul kami.</p>
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
-                       <button onClick={()=>setActiveTab('files')} className="w-full sm:w-auto bg-white text-slate-900 px-8 py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black shadow-xl hover:scale-105 transition-all text-sm sm:text-base">LIHAT FILE SAYA</button>
+                       <button onClick={()=>setActiveTab('files')} className="w-full sm:w-auto bg-white text-slate-900 px-8 py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black shadow-xl hover:scale-105 transition-all text-sm sm:text-base">MULAI BELAJAR</button>
                        {currentTier < 3 && (
-                         <button onClick={()=>setActiveTab('shop')} className="w-full sm:w-auto bg-indigo-600 border border-indigo-500 text-white px-8 py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black shadow-xl hover:bg-indigo-500 transition-all text-sm sm:text-base">UPGRADE PAKET</button>
+                         <button onClick={()=>setActiveTab('shop')} className="w-full sm:w-auto bg-indigo-600 border border-indigo-500 text-white px-8 py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black shadow-xl hover:bg-indigo-500 transition-all text-sm sm:text-base">UPGRADE LISENSI</button>
                        )}
                     </div>
                   </div>
                   <div className="w-full lg:w-1/3 flex justify-center lg:justify-end">
-                     <div className="w-48 h-48 sm:w-64 sm:h-64 bg-white/5 rounded-[2rem] sm:rounded-[3rem] border border-white/10 flex flex-col items-center justify-center gap-3 sm:gap-4 backdrop-blur-xl shadow-2xl relative">
+                     <div className="w-48 h-48 sm:w-64 sm:h-64 bg-white/5 rounded-[2rem] sm:rounded-[3rem] border border-white/10 flex flex-col items-center justify-center gap-3 sm:gap-4 backdrop-blur-xl shadow-2xl relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent rounded-[2rem] sm:rounded-[3rem] pointer-events-none"></div>
-                        <FolderLock size={48} className="text-indigo-400 sm:w-16 sm:h-16" />
+                        
+                        {/* Progress Bar Gamification */}
+                        <div className="relative w-28 h-28 sm:w-32 sm:h-32 mb-2">
+                           <svg className="w-full h-full" viewBox="0 0 36 36">
+                              <path className="text-white/10" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                              <path className="text-emerald-400" strokeDasharray={`${progressData}, 100`} strokeWidth="3" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                           </svg>
+                           <div className="absolute inset-0 flex items-center justify-center flex-col">
+                              <span className="text-2xl sm:text-3xl font-black text-white">{progressData}%</span>
+                           </div>
+                        </div>
+                        
                         <div className="text-center relative z-10">
-                           <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest">Akses Produk</p>
-                           <p className="text-3xl sm:text-4xl font-black text-white">{Math.round((files.filter(f=>currentTier>=f.reqLevel).length / (files.length || 1)) * 100)}%</p>
+                           <p className="text-[10px] sm:text-xs font-black text-slate-300 uppercase tracking-widest">Progress Modul</p>
                         </div>
                      </div>
                   </div>
@@ -730,7 +776,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-                <StatCard label="Total Produk Terbuka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
+                <StatCard label="Total Modul Terbuka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
                 <StatCard label="Saldo Afiliasi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
               </div>
@@ -738,18 +784,18 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: FILES (CATALOG) */}
+          {/* TAB: FILES (CATALOG) DENGAN PROGRESS */}
           {/* ==================================================== */}
           {activeTab === 'files' && (
              <div className="animate-fadeIn space-y-6 sm:space-y-10">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-6 sm:pb-8">
                   <div>
-                    <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tight text-slate-900">Perpustakaan Produk</h2>
-                    <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Unduh file master sesuai dengan lisensi paket Anda.</p>
+                    <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Katalog Materi</h2>
+                    <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Akses, unduh, dan tandai materi yang telah selesai Anda pelajari.</p>
                   </div>
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                    <input type="text" placeholder="Cari nama file..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full sm:w-72 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
+                    <input type="text" placeholder="Cari materi..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full sm:w-72 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
                   </div>
                 </div>
                 
@@ -761,9 +807,67 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
-                     {filteredFiles.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} onReview={() => showToast("Fitur ulasan dalam pengembangan.", "success")} />)}
+                     {filteredFiles.map(f => (
+                       <ProFileCard 
+                          key={f.id} 
+                          file={f} 
+                          currentTier={currentTier} 
+                          isCompleted={completedFiles.includes(f.id)}
+                          onToggleProgress={() => handleToggleFileProgress(f.id)}
+                       />
+                     ))}
                   </div>
                 )}
+             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: LEADERBOARD (GAMIFICATION) */}
+          {/* ==================================================== */}
+          {activeTab === 'leaderboard' && (
+             <div className="animate-fadeIn space-y-6 sm:space-y-10">
+                <div className="text-center max-w-2xl mx-auto space-y-4">
+                   <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-amber-100">
+                      <Trophy size={40}/>
+                   </div>
+                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Top Affiliate Leaderboard</h2>
+                   <p className="text-slate-500 text-sm sm:text-base">Peringkat 10 Marketer terbaik dengan penghasilan komisi terbesar sepanjang masa.</p>
+                </div>
+
+                <div className="max-w-4xl mx-auto bg-white rounded-[2rem] sm:rounded-[3rem] border border-slate-200 overflow-hidden shadow-xl">
+                   <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                      <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs">Peringkat Global</h4>
+                      <span className="text-[10px] font-bold text-slate-400">Update Realtime</span>
+                   </div>
+                   <div className="p-4 sm:p-8 space-y-4">
+                      {leaderboardData.length === 0 ? (
+                         <p className="text-center py-10 font-bold text-slate-400">Belum ada data afiliator yang mendapatkan komisi.</p>
+                      ) : (
+                         leaderboardData.map((lb, index) => {
+                            const isTop3 = index < 3;
+                            return (
+                               <div key={lb.uid} className={`flex items-center p-4 sm:p-6 rounded-2xl border transition-all ${isTop3 ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 shadow-md transform hover:scale-[1.02]' : 'bg-white border-slate-100 hover:bg-slate-50'}`}>
+                                  <div className={`w-10 h-10 sm:w-14 sm:h-14 rounded-full flex items-center justify-center font-black text-lg sm:text-xl shrink-0 ${index === 0 ? 'bg-amber-400 text-white shadow-lg shadow-amber-200' : index === 1 ? 'bg-slate-300 text-white shadow-lg' : index === 2 ? 'bg-orange-300 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
+                                     #{index + 1}
+                                  </div>
+                                  <div className="ml-4 sm:ml-6 flex-1 min-w-0">
+                                     <h4 className="font-black text-slate-900 text-base sm:text-lg truncate">
+                                        {/* Sensor nama member jika dilihat oleh member lain, tampilkan full jika Admin */}
+                                        {isAdmin ? (lb.name || 'Member') : (lb.name ? lb.name.split(' ')[0] + ' ***' : 'Member ***')}
+                                        {lb.uid === user?.uid && <span className="ml-2 text-[10px] bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full uppercase tracking-widest">Anda</span>}
+                                     </h4>
+                                     <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Super Affiliate</p>
+                                  </div>
+                                  <div className="text-right">
+                                     <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Total Komisi</p>
+                                     <p className={`font-black text-lg sm:text-2xl font-['Outfit'] ${isTop3 ? 'text-amber-600' : 'text-slate-800'}`}>Rp {lb.totalEarned.toLocaleString('id-ID')}</p>
+                                  </div>
+                               </div>
+                            )
+                         })
+                      )}
+                   </div>
+                </div>
              </div>
           )}
 
@@ -803,7 +907,7 @@ export default function App() {
                             {lv >= 2 && <li className="flex items-start gap-3"><CheckCircle className="text-emerald-500 shrink-0 mt-0.5" size={20}/><span className="text-sm font-bold text-slate-700">Prioritas Customer Support</span></li>}
                             {lv === 3 && <li className="flex items-start gap-3"><CheckCircle className="text-emerald-500 shrink-0 mt-0.5" size={20}/><span className="text-sm font-bold text-slate-700">Lisensi PLR (Jual Ulang)</span></li>}
                          </ul>
-                         <button onClick={() => setCheckoutPkg({...TIER_LEVELS[lv], level: lv})} disabled={isDisabled} className={`w-full py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black tracking-widest text-xs sm:text-sm transition-all ${isDisabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-xl'}`}>
+                         <button onClick={() => { setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); setAppliedCoupon(null); setCouponInput(''); }} disabled={isDisabled} className={`w-full py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black tracking-widest text-xs sm:text-sm transition-all ${isDisabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-xl'}`}>
                            {isActive ? 'STATUS AKTIF' : isPassed ? 'SUDAH TERLEWATI' : isPending ? 'PROSES VALIDASI' : 'PILIH PAKET'}
                          </button>
                       </div>
@@ -855,7 +959,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN - TRANSACTIONS (VALIDASI & AFFILIATE INJECT) */}
+          {/* TAB: ADMIN - TRANSACTIONS (VALIDASI) */}
           {/* ==================================================== */}
           {activeTab === 'admin_trans' && isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
@@ -893,7 +997,7 @@ export default function App() {
                                  </td>
                                  <td className="px-6 sm:px-8 py-6 font-black text-indigo-600 text-sm sm:text-base">
                                     Rp {t.price.toLocaleString('id-ID')}
-                                    <span className="block text-[10px] text-slate-400 mt-1 font-sans">{t.packageName}</span>
+                                    <span className="block text-[10px] text-slate-400 mt-1 font-sans">{t.packageName} {t.promoCode && <span className="text-emerald-500 font-bold">({t.promoCode})</span>}</span>
                                  </td>
                                  <td className="px-6 sm:px-8 py-6 text-center">
                                       <div className="flex justify-center gap-2">
@@ -918,7 +1022,7 @@ export default function App() {
              <div className="animate-fadeIn space-y-8 sm:space-y-10">
                 <div>
                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Program Afiliasi</h2>
-                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Sebarkan link Anda. Anda akan otomatis mendapat komisi 20% saat pesanan mereka di setujui Admin.</p>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Sebarkan link Anda. Anda otomatis mendapat komisi 20% ketika pesanan klien disetujui Admin.</p>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1083,14 +1187,14 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN - MANAGE USERS (REALTIME DATABASE) */}
+          {/* TAB: ADMIN - MANAGE USERS (CRM SYSTEM) */}
           {/* ==================================================== */}
           {activeTab === 'admin_users' && isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                   <div>
-                    <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member Realtime</h2>
-                    <p className="text-slate-500 text-sm mt-1">Pantau pendaftar terbaru secara instan. Member baru akan ada di urutan teratas.</p>
+                    <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member CRM</h2>
+                    <p className="text-slate-500 text-sm mt-1">Pantau dan kelola data seluruh pengguna sistem Anda.</p>
                   </div>
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
@@ -1111,7 +1215,7 @@ export default function App() {
                           <th className="px-6 sm:px-8 py-5">Identitas Member</th>
                           <th className="px-6 sm:px-8 py-5">Tingkat Langganan</th>
                           <th className="px-6 sm:px-8 py-5 text-center">Ubah Akses Manual</th>
-                          <th className="px-6 sm:px-8 py-5 text-center">Cabut Akses</th>
+                          <th className="px-6 sm:px-8 py-5 text-center">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
@@ -1121,7 +1225,7 @@ export default function App() {
                           filteredUsers.map(m => {
                             const isNew = m.joinDate ? (new Date() - new Date(m.joinDate)) < 86400000 : false;
                             return (
-                              <tr key={m.id} className="hover:bg-slate-50 transition-all">
+                              <tr key={m.uid} className="hover:bg-slate-50 transition-all">
                                 <td className="px-6 sm:px-8 py-4 sm:py-6">
                                    <p className="font-black text-slate-900 text-sm flex items-center">
                                       {m.name || 'User Baru'}
@@ -1137,13 +1241,16 @@ export default function App() {
                                  <div className="flex justify-center gap-1 sm:gap-2 flex-wrap">
                                    {[0, 1, 2, 3].map(lv => (
                                      <button key={lv} onClick={()=>updateMemberTier(m.uid, lv)} className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-500 hover:text-emerald-600'}`}>
-                                       {m.subscriptionLevel === lv ? 'AKTIF' : `UPGRADE ${TIER_LEVELS[lv].name.toUpperCase()}`}
+                                       {m.subscriptionLevel === lv ? 'AKTIF' : `SET ${TIER_LEVELS[lv].name.toUpperCase()}`}
                                      </button>
                                    ))}
                                  </div>
                               </td>
                               <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
-                                   <button onClick={()=>deleteMemberData(m.uid)} className="p-2.5 bg-rose-50 hover:bg-rose-500 text-rose-500 hover:text-white rounded-xl transition-colors inline-flex" title="Hapus Data"><Trash2 size={16}/></button>
+                                   <div className="flex justify-center gap-2">
+                                     <button onClick={()=>setSelectedUserDetail(m)} className="p-2.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl transition-colors inline-flex" title="Lihat Detail CRM"><Eye size={16}/></button>
+                                     <button onClick={()=>deleteMemberData(m.uid)} className="p-2.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-xl transition-colors inline-flex" title="Hapus Data"><Trash2 size={16}/></button>
+                                   </div>
                                 </td>
                               </tr>
                             );
@@ -1161,7 +1268,6 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'admin_files' && isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-10 animate-fadeIn">
-               {/* Form Section */}
                <div className="lg:col-span-1">
                   <form onSubmit={handleProductSubmit} className="bg-white p-6 sm:p-8 lg:p-10 rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 shadow-2xl space-y-6 lg:sticky lg:top-28">
                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 font-['Outfit'] tracking-tight">{editingId ? 'Edit Data Produk' : 'Post Produk Baru'}</h3>
@@ -1219,6 +1325,64 @@ export default function App() {
                   ))}
                </div>
             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: ADMIN COUPONS (KUPON DISKON) */}
+          {/* ==================================================== */}
+          {activeTab === 'admin_coupons' && isAdmin && (
+             <div className="animate-fadeIn space-y-6 sm:space-y-10">
+                <div className="flex justify-between items-end">
+                   <div>
+                      <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Kelola Kupon Diskon</h2>
+                      <p className="text-slate-500 font-medium text-sm mt-2">Buat kode promo untuk memberikan diskon khusus saat checkout.</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   <div className="lg:col-span-1">
+                      <form onSubmit={handleCreateCoupon} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
+                         <h3 className="font-black text-lg text-slate-800">Buat Kupon Baru</h3>
+                         <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Kode Promo</label>
+                            <input type="text" placeholder="Misal: DISKON50" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm uppercase" value={couponForm.code} onChange={e=>setCouponForm({...couponForm, code: e.target.value})} required />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Persentase Diskon (%)</label>
+                            <input type="number" min="1" max="100" placeholder="Misal: 50" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm" value={couponForm.discount} onChange={e=>setCouponForm({...couponForm, discount: e.target.value})} required />
+                         </div>
+                         <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> TAMBAH KUPON</button>
+                      </form>
+                   </div>
+                   
+                   <div className="lg:col-span-2">
+                      <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                         <table className="w-full text-left">
+                            <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                               <tr><th className="px-6 py-5">Kode Kupon</th><th className="px-6 py-5">Diskon</th><th className="px-6 py-5 text-center">Tindakan</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                               {coupons.length === 0 ? (
+                                 <tr><td colSpan="3" className="px-6 py-12 text-center text-slate-400 font-bold">Belum ada kupon diskon yang dibuat.</td></tr>
+                               ) : (
+                                 coupons.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(c => (
+                                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="px-6 py-4">
+                                         <span className="font-mono font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">{c.code}</span>
+                                      </td>
+                                      <td className="px-6 py-4 font-black text-slate-800 text-lg">{c.discount}% OFF</td>
+                                      <td className="px-6 py-4 text-center">
+                                         <button onClick={()=>handleDeleteCoupon(c.id)} className="p-2.5 bg-rose-50 hover:bg-rose-500 text-rose-500 hover:text-white rounded-xl transition-colors inline-flex"><Trash2 size={16}/></button>
+                                      </td>
+                                   </tr>
+                                 ))
+                               )}
+                            </tbody>
+                         </table>
+                      </div>
+                   </div>
+                </div>
+             </div>
           )}
 
           {/* ==================================================== */}
@@ -1283,9 +1447,9 @@ export default function App() {
                  <div className="flex justify-between items-start">
                     <div className="space-y-2">
                       <h3 className="text-2xl sm:text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Checkout Paket</h3>
-                      <p className="text-slate-500 font-medium text-xs sm:text-sm">Langkah 1: Transfer ke salah satu rekening. Langkah 2: Isi form konfirmasi.</p>
+                      <p className="text-slate-500 font-medium text-xs sm:text-sm">Langkah 1: Transfer ke rekening. Langkah 2: Isi form konfirmasi.</p>
                     </div>
-                    <button onClick={()=>setCheckoutPkg(null)} className="p-2 sm:p-3 bg-slate-100 rounded-xl sm:rounded-2xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all shrink-0"><X size={20}/></button>
+                    <button onClick={()=>{setCheckoutPkg(null); setAppliedCoupon(null); setCouponInput('');}} className="p-2 sm:p-3 bg-slate-100 rounded-xl sm:rounded-2xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all shrink-0"><X size={20}/></button>
                  </div>
 
                  {/* Rekening Tujuan */}
@@ -1300,20 +1464,30 @@ export default function App() {
                  </div>
 
                  {/* Total Tagihan */}
-                 <div className="bg-slate-900 rounded-[1.5rem] p-6 text-white relative overflow-hidden shadow-xl flex justify-between items-center">
+                 <div className="bg-slate-900 rounded-[1.5rem] p-6 text-white relative overflow-hidden shadow-xl flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 opacity-30 rounded-full blur-3xl pointer-events-none"></div>
                     <div className="relative z-10">
-                       <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Total Bayar Lunas</p>
-                       <p className="text-2xl sm:text-4xl font-black font-['Outfit'] tracking-tighter">Rp {checkoutPkg.price.toLocaleString('id-ID')}</p>
+                       <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">Total Bayar Lunas</p>
+                       <div className="flex items-baseline gap-2">
+                          {appliedCoupon && <span className="text-lg text-slate-400 line-through decoration-rose-500">Rp {checkoutPkg.price.toLocaleString('id-ID')}</span>}
+                          <p className="text-2xl sm:text-4xl font-black font-['Outfit'] tracking-tighter">Rp {finalPrice.toLocaleString('id-ID')}</p>
+                       </div>
                     </div>
-                    <div className="text-right relative z-10">
+                    <div className="text-left sm:text-right relative z-10">
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Upgrade</p>
                        <p className="text-base sm:text-xl font-black text-amber-400">{checkoutPkg.name}</p>
                     </div>
                  </div>
 
-                 {/* Form Konfirmasi Internal */}
+                 {/* Form Konfirmasi Internal & Kupon */}
                  <form onSubmit={handlePurchaseRequest} className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-200 space-y-4">
+                    
+                    {/* Input Kupon */}
+                    <div className="flex gap-2 mb-6 border-b border-slate-200 pb-6">
+                       <input type="text" placeholder="Punya Kode Promo?" value={couponInput} onChange={e=>setCouponInput(e.target.value)} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm uppercase" />
+                       <button type="button" onClick={handleApplyCoupon} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 transition-colors">Terapkan</button>
+                    </div>
+
                     <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-2 flex items-center gap-2"><Receipt size={16} className="text-indigo-600"/> Form Konfirmasi Transfer</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                        <input type="text" placeholder="Nama Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
@@ -1329,6 +1503,75 @@ export default function App() {
               </div>
            </div>
         </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL CRM DETAIL MEMBER (HANYA ADMIN) */}
+      {/* ========================================== */}
+      {selectedUserDetail && isAdmin && (
+         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-slate-900/80 animate-fadeIn">
+            <div className="max-w-2xl w-full bg-white rounded-[2rem] sm:rounded-[3rem] shadow-3xl overflow-hidden border border-white/20 flex flex-col max-h-[90vh]">
+               {/* Header Modal */}
+               <div className="p-6 sm:p-8 border-b border-slate-100 flex justify-between items-start bg-slate-50">
+                  <div className="flex items-center gap-4">
+                     <div className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center font-black text-xl shadow-lg shadow-indigo-200">
+                        {selectedUserDetail.name?.charAt(0).toUpperCase() || 'U'}
+                     </div>
+                     <div>
+                        <h3 className="text-xl sm:text-2xl font-black text-slate-900 font-['Outfit'] tracking-tight leading-none mb-1">{selectedUserDetail.name || 'Member'}</h3>
+                        <p className="text-sm font-bold text-slate-500">{selectedUserDetail.email}</p>
+                     </div>
+                  </div>
+                  <button onClick={()=>setSelectedUserDetail(null)} className="p-2 sm:p-3 bg-white rounded-xl sm:rounded-2xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all border border-slate-200 shadow-sm"><X size={20}/></button>
+               </div>
+               
+               {/* Body Modal (Scrollable) */}
+               <div className="p-6 sm:p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Status Lisensi</p>
+                        <p className="font-black text-indigo-600 uppercase">{TIER_LEVELS[selectedUserDetail.subscriptionLevel]?.name || 'FREE'}</p>
+                     </div>
+                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Pendapatan Afiliasi</p>
+                        <p className="font-black text-emerald-600">Rp {leaderboardData.find(u => u.uid === selectedUserDetail.uid)?.totalEarned.toLocaleString('id-ID') || '0'}</p>
+                     </div>
+                  </div>
+
+                  <div>
+                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 ml-1">Detail Kontak & Pembayaran</p>
+                     <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3 text-sm">
+                        <div className="flex justify-between"><span className="font-bold text-slate-500">No. WhatsApp:</span> <span className="font-black text-slate-800">{selectedUserDetail.phone || 'Belum diisi'}</span></div>
+                        <div className="flex justify-between"><span className="font-bold text-slate-500">Nama Bank:</span> <span className="font-black text-slate-800">{selectedUserDetail.bank || 'Belum diisi'}</span></div>
+                        <div className="flex justify-between"><span className="font-bold text-slate-500">No. Rekening:</span> <span className="font-black text-slate-800">{selectedUserDetail.accountNo || 'Belum diisi'}</span></div>
+                        <div className="flex justify-between pt-3 border-t border-slate-200"><span className="font-bold text-slate-500">UID System:</span> <span className="font-mono text-[10px] text-slate-400">{selectedUserDetail.uid}</span></div>
+                        <div className="flex justify-between"><span className="font-bold text-slate-500">Direferensikan Oleh:</span> <span className="font-mono text-[10px] text-indigo-400">{selectedUserDetail.referredBy || 'Organik (Tidak ada)'}</span></div>
+                     </div>
+                  </div>
+
+                  <div>
+                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 ml-1">Riwayat Transaksi User Ini</p>
+                     <div className="space-y-3">
+                        {transactions.filter(t => t.userId === selectedUserDetail.uid).length === 0 ? (
+                           <div className="p-4 bg-white border border-slate-200 rounded-xl text-center text-sm font-bold text-slate-400">Belum ada transaksi.</div>
+                        ) : (
+                           transactions.filter(t => t.userId === selectedUserDetail.uid).map(t => (
+                              <div key={t.id} className="flex justify-between items-center p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                 <div>
+                                    <p className="font-black text-slate-800 text-sm">Paket {t.packageName}</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">{new Date(t.createdAt).toLocaleDateString('id-ID')}</p>
+                                 </div>
+                                 <span className={`px-3 py-1 rounded-full text-[9px] uppercase tracking-widest font-black ${t.status === 'approved' ? 'bg-emerald-100 text-emerald-600' : t.status === 'rejected' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
+                                    {t.status}
+                                 </span>
+                              </div>
+                           ))
+                        )}
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
       )}
 
       {/* Global CSS */}
@@ -1358,7 +1601,7 @@ function NavBtn({ active, onClick, icon, label, count }) {
         <div className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:text-indigo-600'}`}>{icon}</div>
         <span className="text-sm tracking-tight">{label}</span>
       </div>
-      {count !== undefined && count > 0 && !active && <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
+      {count !== undefined && count > 0 && !active && <span className="bg-rose-500 text-white shadow-lg shadow-rose-200 text-[10px] font-black px-2.5 py-1 rounded-full">{count}</span>}
     </button>
   );
 }
@@ -1380,18 +1623,19 @@ function StatCard({ label, val, icon, color }) {
   );
 }
 
-function ProFileCard({ file, currentTier, onReview }) {
+function ProFileCard({ file, currentTier, isCompleted, onToggleProgress }) {
   const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
-    <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl' : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
-      {isAccessible && <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-sky-400"></div>}
+    <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? (isCompleted ? 'border-emerald-300 shadow-lg' : 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl') : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
+      {isAccessible && <div className={`absolute top-0 left-0 w-full h-2 ${isCompleted ? 'bg-emerald-400' : 'bg-gradient-to-r from-indigo-600 to-sky-400'}`}></div>}
       <div className="flex justify-between items-start mb-6 sm:mb-8 relative z-10">
-        <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? 'bg-indigo-50 text-indigo-600 group-hover:scale-110' : 'bg-slate-200 text-slate-400'}`}>
+        <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? (isCompleted ? 'bg-emerald-50 text-emerald-500' : 'bg-indigo-50 text-indigo-600 group-hover:scale-110') : 'bg-slate-200 text-slate-400'}`}>
           {file.category === 'Ebook' ? <FileText size={24} className="sm:w-7 sm:h-7"/> : file.category === 'Video' ? <Video size={24} className="sm:w-7 sm:h-7"/> : <Box size={24} className="sm:w-7 sm:h-7"/>}
         </div>
         {isAccessible ? (
-          <button onClick={onReview} className="text-[9px] font-black text-amber-500 hover:bg-amber-50 px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1 border border-amber-200 transition-colors">
-            <Star size={12} fill="currentColor"/> NILAI
+          <button onClick={onToggleProgress} className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1 border transition-colors ${isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
+            {isCompleted ? <CheckSquare size={12}/> : <Square size={12}/>} 
+            {isCompleted ? 'SELESAI' : 'TANDAI'}
           </button>
         ) : (
           <div className="bg-white text-rose-500 text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1.5 border border-rose-100 shadow-sm">
@@ -1405,7 +1649,7 @@ function ProFileCard({ file, currentTier, onReview }) {
       </div>
       <div className="space-y-3 sm:space-y-4 mb-6 sm:mb-8 text-[10px] sm:text-[11px] font-bold text-slate-700 relative z-10">
          <div className="flex justify-between items-center border-b border-slate-100 pb-2"><span className="text-slate-400 uppercase tracking-widest">Ukuran</span><span>{file.size}</span></div>
-         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Akses Tier</span><span className={`px-2 py-1 rounded-md ${isAccessible ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{TIER_LEVELS[file.reqLevel]?.name.toUpperCase() || 'FREE'}</span></div>
+         <div className="flex justify-between items-center"><span className="text-slate-400 uppercase tracking-widest">Akses Tier</span><span className={`px-2 py-1 rounded-md ${isAccessible ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-600'}`}>{TIER_LEVELS[file.reqLevel]?.name.toUpperCase() || 'FREE'}</span></div>
       </div>
       <div className="relative z-10 mt-auto">
         {isAccessible ? (
