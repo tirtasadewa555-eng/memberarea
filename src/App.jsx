@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, 
-  deleteDoc, addDoc, serverTimestamp, query, where, increment, orderBy, limit
+  deleteDoc, addDoc, serverTimestamp, query, where, increment, orderBy, limit, arrayUnion
 } from 'firebase/firestore';
 import { 
   LayoutDashboard, ShoppingBag, Users, UserCircle, LogOut, Plus, Search, Download, 
@@ -19,7 +19,7 @@ import {
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
   MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
-  Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen
+  Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, HelpCircle, CheckCircle2
 } from 'lucide-react';
 
 // ==========================================
@@ -50,15 +50,27 @@ const BANK_ACCOUNTS = [
   { bank: "MANDIRI", number: "0987 6543 21", owner: "ADMIN MEMBERSHIP" }
 ];
 
-// Data Bank Soal Edukasi (V13 - Bisa ditambah sesuai kebutuhan)
-const DAILY_QUIZZES = [
-  { q: "Apa kepanjangan dari CTA dalam digital marketing?", options: ["Call To Action", "Click To Add", "Cost To Acquire", "Customer Target Area"], answer: 0, exp: "CTA (Call To Action) adalah instruksi berupa teks atau tombol yang didesain untuk memancing respon langsung dari audiens." },
-  { q: "Manakah metrik yang mengukur persentase pengunjung yang langsung keluar dari website tanpa interaksi?", options: ["Click-Through Rate", "Bounce Rate", "Conversion Rate", "Retention Rate"], answer: 1, exp: "Bounce Rate mengukur persentase sesi satu halaman di mana pengguna keluar tanpa berpindah halaman lain." },
-  { q: "Apa tujuan utama dari A/B Testing?", options: ["Membuat 2 website berbeda", "Membandingkan dua versi untuk melihat mana performa terbaik", "Menaikkan budget iklan", "Menghapus data pengunjung lama"], answer: 1, exp: "A/B Testing digunakan untuk mengambil keputusan berbasis data dengan membandingkan dua variasi (A dan B) pada audiens." },
-  { q: "Dalam SEO, apa yang dimaksud dengan 'Backlink'?", options: ["Link yang rusak di website", "Tautan dari website lain yang mengarah ke website kita", "Tombol kembali ke halaman utama", "Membayar Google agar website naik"], answer: 1, exp: "Backlink (Inbound Link) adalah tautan dari website orang lain yang mengarah ke web kita, sangat penting untuk otoritas SEO." },
-  { q: "Fase pertama dalam sebuah Sales Funnel (Corong Penjualan) biasanya disebut dengan?", options: ["Awareness (Kesadaran)", "Action (Tindakan)", "Desire (Keinginan)", "Retention (Retensi)"], answer: 0, exp: "Fase pertama adalah Awareness, di mana calon pelanggan baru menyadari eksistensi produk/brand Anda." },
-  { q: "Metode menjual produk orang lain dan mendapatkan komisi disebut?", options: ["Dropshipping", "Affiliate Marketing", "MLM", "White Labeling"], answer: 1, exp: "Affiliate Marketing memungkingkan Anda mendapat komisi dari setiap penjualan yang terjadi lewat link unik (referral) Anda." },
-  { q: "Format file apa yang paling direkomendasikan untuk logo dengan background transparan?", options: ["JPG", "MP4", "PNG", "PNG / SVG"], answer: 3, exp: "PNG dan SVG mendukung Alpha Channel (Transparansi), sangat cocok untuk logo dan grafis web." }
+// ==========================================
+// DATA BANK: PROSPACE ACADEMY (E-LEARNING)
+// ==========================================
+const E_LEARNING_MODULES = [
+  {
+    id: "modul_1",
+    title: "1. Pondasi Bisnis Digital",
+    lessons: [
+      { id: "m1_l1", title: "Pola Pikir Pebisnis Sukses", type: "video", content: "https://www.youtube.com/embed/jfKfPfyJRdk", desc: "Tonton video ini untuk memahami mindset dasar sebelum Anda memulai membangun sistem bisnis digital Anda. Jangan di-skip!", points: 15 },
+      { id: "m1_l2", title: "Anatomi Sales Funnel", type: "article", content: "Sales Funnel (Corong Penjualan) adalah perjalanan psikologis pelanggan. Dimulai dari <b>Awareness</b> (Mereka menyadari produk Anda), lalu <b>Interest</b> (Mulai tertarik), kemudian <b>Desire</b> (Timbul hasrat ingin membeli), dan berujung pada <b>Action</b> (Mengeklik tombol Beli). Tugas utama Anda adalah memastikan corong ini tidak bocor di tengah jalan.", points: 10 },
+      { id: "m1_l3", title: "Kuis Evaluasi Modul 1", type: "quiz", question: "Manakah yang BUKAN merupakan bagian utama dari sebuah Sales Funnel standar?", options: ["Awareness", "Action", "Procrastination", "Desire"], answer: 2, exp: "Procrastination (Menunda) bukan bagian dari funnel penjualan. Formula yang benar adalah A-I-D-A.", points: 25 }
+    ]
+  },
+  {
+    id: "modul_2",
+    title: "2. Strategi Affiliate Marketing",
+    lessons: [
+      { id: "m2_l1", title: "Cara Sebar Link Referral", type: "article", content: "Gunakan Link Referral Anda yang ada di menu 'Program Afiliasi'. Jangan spam di grup. Gunakan strategi 'Soft Selling' dengan cara memberikan edukasi/nilai tambah terlebih dahulu di Social Media, lalu sematkan link Anda di Bio Instagram/TikTok.", points: 10 },
+      { id: "m2_l2", title: "Kuis Strategi Promosi", type: "quiz", question: "Platform manakah yang paling direkomendasikan untuk menaruh link referral agar bertahan lama dan mudah diakses followers?", options: ["Story WhatsApp", "Link di Bio Instagram / Linktree", "Komentar Grup Facebook", "Direct Message Acak"], answer: 1, exp: "Link di Bio bersifat permanen dan mudah diakses oleh followers baru kapan saja tanpa tenggelam oleh postingan/chat baru.", points: 25 }
+    ]
+  }
 ];
 
 let firebaseApp, auth, db;
@@ -100,7 +112,7 @@ export default function App() {
   const [showCertificate, setShowCertificate] = useState(false); 
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiTyping, setAiTyping] = useState(false);
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Halo! Saya ProSpace AI Mentor. Butuh bantuan materi, info afiliasi, atau kendala teknis?' }]);
+  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Halo! Saya ProSpace AI Mentor. Butuh panduan belajar, komisi, atau teknis?' }]);
 
   // --- Form States ---
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
@@ -117,24 +129,15 @@ export default function App() {
   const [searchFileQuery, setSearchFileQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
 
-  // --- Ruang Fokus VIP States (V12) ---
+  // --- Ruang Fokus VIP States ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
   const [isFocusing, setIsFocusing] = useState(false);
   const [focusMode, setFocusMode] = useState('work'); 
 
-  // --- Kuis Edukasi States (V13) ---
-  const todayQuizIndex = useMemo(() => {
-     // Gunakan hari dalam satu tahun agar soal berganti tiap hari
-     const now = new Date();
-     const start = new Date(now.getFullYear(), 0, 0);
-     const diff = (now - start) + ((start.getTimezoneOffset() - now.getTimezoneOffset()) * 60 * 1000);
-     const oneDay = 1000 * 60 * 60 * 24;
-     const day = Math.floor(diff / oneDay);
-     return day % DAILY_QUIZZES.length;
-  }, []);
-  const todayQuiz = DAILY_QUIZZES[todayQuizIndex];
-  const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
-  const [isQuizProcessing, setIsQuizProcessing] = useState(false);
+  // --- E-Learning Academy States (V13) ---
+  const [activeCourseId, setActiveCourseId] = useState(E_LEARNING_MODULES[0].id);
+  const [activeLessonId, setActiveLessonId] = useState(E_LEARNING_MODULES[0].lessons[0].id);
+  const [quizSelection, setQuizSelection] = useState(null);
 
   const chatEndRef = useRef(null);
   const aiEndRef = useRef(null);
@@ -143,13 +146,10 @@ export default function App() {
   const currentTier = userData?.subscriptionLevel || 0;
   const affiliateBalance = userData?.commissionBalance || 0;
   const completedFiles = userData?.completedFiles || [];
+  const completedLessons = userData?.completedLessons || [];
 
-  // Gamifikasi Poin Terintegrasi
-  const userPoints = useMemo(() => {
-    let pts = userData?.rewardPoints || 0;
-    if (completedFiles.length) pts += completedFiles.length * 50; 
-    return pts;
-  }, [completedFiles, userData?.rewardPoints]);
+  // Gamifikasi Poin (Kini didapat otomatis via server, ini hanya fallback display aman)
+  const userPoints = userData?.rewardPoints || 0;
 
   const userRank = useMemo(() => {
     if(userPoints >= 1000) return { name: 'Diamond', color: 'text-purple-600', bg: 'bg-purple-100', border:'border-purple-200', icon: <Crown size={14}/> };
@@ -172,9 +172,15 @@ export default function App() {
     return files.filter(f => f.name?.toLowerCase().includes(searchFileQuery.toLowerCase()));
   }, [files, searchFileQuery]);
 
-  const sortedChat = useMemo(() => {
-    return [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
-  }, [chatMessages]);
+  const sortedChat = useMemo(() => [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), [chatMessages]);
+
+  const accessibleFiles = useMemo(() => files.filter(f => currentTier >= f.reqLevel), [files, currentTier]);
+  
+  const progressData = useMemo(() => {
+    if(accessibleFiles.length === 0) return 0;
+    const count = completedFiles.filter(id => accessibleFiles.some(f => f.id === id)).length;
+    return Math.round((count / accessibleFiles.length) * 100);
+  }, [accessibleFiles, completedFiles]);
 
   const adminStats = useMemo(() => {
     const approved = transactions.filter(t => t.status === 'approved');
@@ -195,14 +201,6 @@ export default function App() {
         .sort((a, b) => b.totalEarned - a.totalEarned)
         .slice(0, 10);
   }, [allUsers, withdrawals]);
-
-  const accessibleFiles = useMemo(() => files.filter(f => currentTier >= f.reqLevel), [files, currentTier]);
-  
-  const progressData = useMemo(() => {
-    if(accessibleFiles.length === 0) return 0;
-    const count = completedFiles.filter(id => accessibleFiles.some(f => f.id === id)).length;
-    return Math.round((count / accessibleFiles.length) * 100);
-  }, [accessibleFiles, completedFiles]);
 
   const finalPrice = useMemo(() => {
     if (!checkoutPkg) return 0;
@@ -329,14 +327,14 @@ export default function App() {
        try {
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(25) });
            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(25) });
-           showToast("Sesi Fokus Selesai! +25 Poin 🏆", "success");
+           showToast("Sesi Fokus Selesai! Anda mendapatkan +25 Poin Reward 🏆", "success");
            logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan sesi Deep Work! 🧠`, 'focus');
            
            setFocusMode('break');
            setFocusTimeLeft(5 * 60); 
-       } catch(e) { showToast("Gagal menyimpan poin", "error"); }
+       } catch(e) { showToast("Gagal menyimpan poin sesi", "error"); }
     } else {
-       showToast("Waktu istirahat habis!", "success");
+       showToast("Waktu istirahat habis. Saatnya kembali fokus!", "success");
        setFocusMode('work');
        setFocusTimeLeft(25 * 60); 
     }
@@ -373,7 +371,7 @@ export default function App() {
         const init = { 
             name: formData.name, email: formData.email, subscriptionLevel: 0, 
             joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0,
-            referredBy: storedRef || null, completedFiles: [], rewardPoints: 0, lastCheckInDate: '', lastQuizDate: ''
+            referredBy: storedRef || null, completedFiles: [], completedLessons: [], rewardPoints: 0, lastCheckInDate: ''
         };
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
@@ -389,7 +387,6 @@ export default function App() {
     setAuthLoading(false);
   };
 
-  // -- Gamifikasi: Check In Harian --
   const handleDailyCheckIn = async () => {
     const today = new Date().toDateString();
     if (userData?.lastCheckInDate === today) return showToast("Sudah klaim hari ini.", "error");
@@ -400,33 +397,34 @@ export default function App() {
     } catch (e) { showToast("Error klaim poin", "error"); }
   };
 
-  // -- Gamifikasi: Kuis Pintar Edukasi (V13) --
-  const handleAnswerQuiz = async (selectedIndex) => {
-      if (isQuizProcessing) return;
-      const today = new Date().toDateString();
-      if (userData?.lastQuizDate === today) return showToast("Anda sudah ikut kuis hari ini.", "error");
-      
-      setIsQuizProcessing(true);
-      setSelectedQuizAnswer(selectedIndex);
-      const isCorrect = selectedIndex === todayQuiz.answer;
-      const pointEarned = isCorrect ? 20 : 5;
+  // E-Learning Lesson Handler
+  const handleCompleteLearning = async (lesson, isQuiz = false, selectedOpt = null) => {
+    if (completedLessons.includes(lesson.id)) {
+        return showToast("Anda sudah menyelesaikan materi ini sebelumnya.", "error");
+    }
 
-      setTimeout(async () => {
-          try {
-             await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(pointEarned), lastQuizDate: today });
-             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(pointEarned), lastQuizDate: today });
-             
-             if (isCorrect) {
-                 showToast(`Tepat Sekali! Anda dapat +${pointEarned} Poin`, 'success');
-                 logActivity(`${userData?.name?.split(' ')[0]} menjawab Kuis Harian dengan Benar! 🧠`, 'quiz');
-             } else {
-                 showToast(`Jawaban Kurang Tepat. +${pointEarned} Poin partisipasi`, 'error');
-             }
-          } catch(e) {
-             showToast("Koneksi gagal", "error");
-          }
-          setIsQuizProcessing(false);
-      }, 800);
+    if (isQuiz) {
+        if (selectedOpt !== lesson.answer) {
+            return showToast(`Jawaban Kurang Tepat! ${lesson.exp}`, "error"); 
+        }
+        showToast(`Jawaban Tepat! +${lesson.points} Poin. ${lesson.exp}`, "success");
+    } else {
+        showToast(`Materi Selesai! +${lesson.points} Poin Reward.`, "success");
+    }
+
+    try {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { 
+            completedLessons: arrayUnion(lesson.id),
+            rewardPoints: increment(lesson.points)
+        });
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { 
+            rewardPoints: increment(lesson.points) 
+        });
+        logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan materi Academy "${lesson.title}" 🎓`, 'learn');
+        setQuizSelection(null); // Reset quiz UI state
+    } catch (e) {
+        showToast("Gagal menyimpan progress.", "error");
+    }
   };
 
   const handleToggleFileProgress = async (fileId, fileName) => {
@@ -436,8 +434,8 @@ export default function App() {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { completedFiles: newArr });
         
         if(isDoneNow) {
-            showToast("Materi selesai! +50 Poin Reward", "success");
-            logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan materi: ${fileName} 📚`, 'learn');
+            showToast("File ditandai selesai! +50 Poin Reward", "success");
+            logActivity(`${userData?.name?.split(' ')[0] || 'Member'} mendownload master file: ${fileName} 📦`, 'learn');
         }
     } catch(e) { showToast("Gagal simpan progress", "error"); }
   };
@@ -610,8 +608,7 @@ export default function App() {
         if(low.includes('halo') || low.includes('hai')) reply = "Halo! Ada yang bisa AI bantu?";
         if(low.includes('komisi') || low.includes('afiliasi')) reply = "Komisi afiliasi sebesar 20% diberikan saat penjualan via link Anda selesai divalidasi. Cek menu Program Afiliasi.";
         if(low.includes('sertifikat')) reply = "Sertifikat terbuka jika progress materi mencapai 100%. Teruslah belajar!";
-        if(low.includes('kuis') || low.includes('belajar')) reply = "Kerjakan Kuis Edukasi setiap hari di menu 'Kuis Pintar' untuk menguji wawasan digital Anda dan dapatkan hingga +20 Poin!";
-        if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via Kuis Pintar (+20), Daily Check-in (+10), Selesai Materi (+50), dan Deep Work di Ruang Fokus (+25 per sesi).";
+        if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via E-Learning Academy (+15 hingga +25 Poin per materi), Daily Check-in (+10), dan Deep Work di Ruang Fokus (+25 per sesi).";
         
         setAiMessages([...newMsgs, { role: 'ai', text: reply }]);
         setAiTyping(false);
@@ -758,6 +755,11 @@ export default function App() {
     </div>
   );
 
+  // Cari Modul E-Learning & Lesson yang Aktif
+  const activeCourse = E_LEARNING_MODULES.find(m => m.id === activeCourseId) || E_LEARNING_MODULES[0];
+  const activeLesson = activeCourse.lessons.find(l => l.id === activeLessonId) || activeCourse.lessons[0];
+  const isLessonCompleted = completedLessons.includes(activeLesson.id);
+
   // ==========================================
   // RENDER: MAIN DASHBOARD
   // ==========================================
@@ -767,7 +769,7 @@ export default function App() {
       {/* FOMO TICKER */}
       {latestActivity && (
         <div className="fixed bottom-6 left-6 z-[200] max-w-sm bg-white rounded-2xl shadow-3xl border border-slate-100 p-4 flex items-center gap-4 animate-slideInRight">
-           <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${latestActivity.type === 'order' ? 'bg-amber-100 text-amber-600' : latestActivity.type === 'focus' || latestActivity.type === 'quiz' ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
+           <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${latestActivity.type === 'order' ? 'bg-amber-100 text-amber-600' : latestActivity.type === 'focus' || latestActivity.type === 'learn' || latestActivity.type === 'quiz' ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
               <Zap size={20} className="animate-pulse" />
            </div>
            <p className="text-xs font-bold text-slate-700 leading-tight">{latestActivity.text}</p>
@@ -812,9 +814,9 @@ export default function App() {
           <button onClick={()=>setSidebarOpen(false)} className="lg:hidden text-slate-400"><X/></button>
         </div>
         <div className="p-6 flex-1 space-y-2 overflow-y-auto custom-scrollbar">
-          {isAdmin ? (
+          {isAdmin && (
             <>
-              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Admin Panel</p>
+              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Admin Panel Master</p>
               <NavBtn active={activeTab==='admin_overview'} onClick={()=>{setActiveTab('admin_overview'); closeSidebarMobile();}} icon={<Activity size={20}/>} label="Overview Visual" />
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
               <NavBtn active={activeTab==='admin_wd'} onClick={()=>{setActiveTab('admin_wd'); closeSidebarMobile();}} icon={<Wallet size={20}/>} label="Pencairan Dana" count={adminStats.pendingWd} />
@@ -822,25 +824,24 @@ export default function App() {
               <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
               <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member CRM" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
-            </>
-          ) : (
-            <>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Member Menu</p>
-              <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
-              
-              {/* NEW V13 TAB */}
-              <NavBtn active={activeTab==='quiz'} onClick={()=>{setActiveTab('quiz'); closeSidebarMobile();}} icon={<BookOpen size={20}/>} label="Kuis Pintar" />
-              
-              <NavBtn active={activeTab==='focus'} onClick={()=>{setActiveTab('focus'); closeSidebarMobile();}} icon={<Headphones size={20}/>} label="Ruang Fokus VIP" />
-              <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Komunitas VIP" />
-              <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="Katalog Materi" count={files.filter(f=>currentTier>=f.reqLevel).length} />
-              <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
-              <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
-              <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20}/>} label="Program Afiliasi" />
-              <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20}/>} label="Peringkat Marketer" />
-              <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Tiket Bantuan" />
+              <div className="my-6 border-b border-slate-100"></div>
             </>
           )}
+          
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">{isAdmin ? 'Akses Fitur Member' : 'Member Menu'}</p>
+          <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
+          
+          {/* NEW V13 TAB (Ganti Kuis Jadi Academy) */}
+          <NavBtn active={activeTab==='elearning'} onClick={()=>{setActiveTab('elearning'); closeSidebarMobile();}} icon={<GraduationCap size={20}/>} label="ProSpace Academy" />
+          
+          <NavBtn active={activeTab==='focus'} onClick={()=>{setActiveTab('focus'); closeSidebarMobile();}} icon={<Headphones size={20}/>} label="Ruang Fokus VIP" />
+          <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Komunitas VIP" />
+          <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="Katalog Master File" count={files.filter(f=>currentTier>=f.reqLevel).length} />
+          <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
+          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
+          <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20}/>} label="Program Afiliasi" />
+          <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20}/>} label="Peringkat Marketer" />
+          <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Tiket Bantuan" />
         </div>
         <div className="p-6 border-t border-slate-100 shrink-0">
           <NavBtn active={activeTab==='profile'} onClick={()=>{setActiveTab('profile'); closeSidebarMobile();}} icon={<Settings size={20}/>} label="Pengaturan Profil" />
@@ -858,7 +859,13 @@ export default function App() {
           <div className="flex items-center gap-6 ml-auto">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-black text-slate-900 leading-tight">{userData?.name || 'Member'}</p>
-              <div className={`text-[8px] px-2 py-0.5 rounded-full uppercase font-black inline-block mt-1 ${userRank.bg} ${userRank.color} border ${userRank.border}`}>{userRank.icon} {userRank.name} RANK</div>
+              {isAdmin ? (
+                 <div className="text-[9px] px-2 py-0.5 rounded-full uppercase font-black inline-flex items-center gap-1 mt-1 bg-indigo-100 text-indigo-600 border border-indigo-200">
+                    <ShieldCheck size={10}/> SUPER ADMIN
+                 </div>
+              ) : (
+                 <div className={`text-[8px] px-2 py-0.5 rounded-full uppercase font-black inline-block mt-1 ${userRank.bg} ${userRank.color} border ${userRank.border}`}>{userRank.icon} {userRank.name} RANK</div>
+              )}
             </div>
             <div className="h-10 w-10 bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white rounded-2xl flex items-center justify-center font-black shadow-lg cursor-pointer" onClick={()=>setActiveTab('profile')}>
               {userData?.name?.charAt(0).toUpperCase() || 'U'}
@@ -869,20 +876,22 @@ export default function App() {
         <main className="flex-1 p-6 sm:p-12 w-full max-w-7xl mx-auto animate-fadeIn pb-32">
           
           {/* TAB: DASHBOARD */}
-          {activeTab === 'dashboard' && !isAdmin && (
+          {activeTab === 'dashboard' && (
             <div className="space-y-8">
-              <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-[2.5rem] p-6 sm:p-10 text-white shadow-xl flex flex-col sm:flex-row justify-between items-center gap-6 border border-purple-400/30 overflow-hidden relative">
-                 <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
-                 <div className="text-center sm:text-left relative z-10">
-                    <h3 className="text-xl sm:text-2xl font-black mb-1 flex items-center justify-center sm:justify-start gap-2"><Gift size={24}/> Bonus Check-In Harian</h3>
-                    <p className="text-purple-100 text-xs sm:text-sm font-medium">Klaim setiap hari dan kumpulkan Poin Reward Anda.</p>
-                 </div>
-                 <button onClick={handleDailyCheckIn} disabled={userData?.lastCheckInDate === new Date().toDateString()} className="relative z-10 w-full sm:w-auto bg-white text-purple-600 px-8 py-4 rounded-2xl font-black text-sm hover:scale-105 transition-transform disabled:opacity-50 shadow-lg">
-                    {userData?.lastCheckInDate === new Date().toDateString() ? 'SUDAH KLAIM' : '🎁 KLAIM +10 POIN'}
-                 </button>
-              </div>
+              {!isAdmin && (
+                <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-[2.5rem] p-6 sm:p-10 text-white shadow-xl flex flex-col sm:flex-row justify-between items-center gap-6 border border-purple-400/30 overflow-hidden relative">
+                   <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+                   <div className="text-center sm:text-left relative z-10">
+                      <h3 className="text-xl sm:text-2xl font-black mb-1 flex items-center justify-center sm:justify-start gap-2"><Gift size={24}/> Bonus Check-In Harian</h3>
+                      <p className="text-purple-100 text-xs sm:text-sm font-medium">Klaim setiap hari dan kumpulkan Poin Reward Anda.</p>
+                   </div>
+                   <button onClick={handleDailyCheckIn} disabled={userData?.lastCheckInDate === new Date().toDateString()} className="relative z-10 w-full sm:w-auto bg-white text-purple-600 px-8 py-4 rounded-2xl font-black text-sm hover:scale-105 transition-transform disabled:opacity-50 shadow-lg">
+                      {userData?.lastCheckInDate === new Date().toDateString() ? 'SUDAH KLAIM' : '🎁 KLAIM +10 POIN'}
+                   </button>
+                </div>
+              )}
 
-              {progressData === 100 && accessibleFiles.length > 0 && (
+              {progressData === 100 && accessibleFiles.length > 0 && !isAdmin && (
                 <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-[2.5rem] p-6 sm:p-10 text-white shadow-xl border border-emerald-400/30">
                    <div className="text-center sm:text-left">
                       <h3 className="text-xl sm:text-2xl font-black mb-1 flex items-center justify-center sm:justify-start gap-2"><BadgeCheck size={24}/> Luar Biasa! Selesai 100%</h3>
@@ -898,91 +907,160 @@ export default function App() {
                   <div className="space-y-4 text-center lg:text-left w-full lg:w-2/3">
                     <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10 backdrop-blur-sm">
                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{TIER_LEVELS[currentTier].name} Member</span>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{isAdmin ? 'Mode Admin' : TIER_LEVELS[currentTier].name + ' Member'}</span>
                     </div>
                     <h2 className="text-3xl sm:text-5xl font-black font-['Outfit'] tracking-tight leading-tight">Halo, {userData?.name?.split(' ')[0] || 'Member'}! 👋</h2>
-                    <p className="text-slate-400 text-base sm:text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed">Uji wawasan Anda hari ini di menu <strong>Kuis Pintar</strong> untuk mendapatkan poin tambahan, atau jalankan <strong>Ruang Fokus VIP</strong>.</p>
-                    <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
-                       <button onClick={()=>setActiveTab('quiz')} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"><BookOpen size={18}/> KUIS PINTAR</button>
-                       <button onClick={()=>setActiveTab('files')} className="w-full sm:w-auto bg-white text-slate-900 px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2">KATALOG MATERI</button>
+                    <p className="text-slate-400 text-base sm:text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed">
+                      {isAdmin ? "Anda dapat menelusuri seluruh fitur member melalui sidebar di sebelah kiri." : "Akses modul interaktif di ProSpace Academy dan tingkatkan skill digital Anda hari ini."}
+                    </p>
+                    {!isAdmin && (
+                      <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
+                         <button onClick={()=>setActiveTab('elearning')} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"><GraduationCap size={18}/> PROSPACE ACADEMY</button>
+                      </div>
+                    )}
+                  </div>
+                  {!isAdmin && (
+                    <div className="w-full lg:w-1/3 flex justify-center items-center flex-col gap-4">
+                       <div className="relative w-36 h-36">
+                          <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                             <circle cx="18" cy="18" r="15.9" fill="none" stroke="#ffffff10" strokeWidth="3" />
+                             <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`${progressData}, 100`} strokeLinecap="round" className="transition-all duration-1000" />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center font-black text-4xl text-white">{progressData}%</div>
+                       </div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Katalog Progress</p>
                     </div>
-                  </div>
-                  <div className="w-full lg:w-1/3 flex justify-center items-center flex-col gap-4">
-                     <div className="relative w-36 h-36">
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                           <circle cx="18" cy="18" r="15.9" fill="none" stroke="#ffffff10" strokeWidth="3" />
-                           <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`${progressData}, 100`} strokeLinecap="round" className="transition-all duration-1000" />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center font-black text-4xl text-white">{progressData}%</div>
-                     </div>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Learning Progress</p>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-                <StatCard label="Reward Points" val={userPoints + " PTS"} icon={<Award size={28}/>} color="purple" />
-                <StatCard label="Modul Terbuka" val={`${accessibleFiles.length} File`} icon={<Box size={28}/>} color="indigo" />
-                <StatCard label="Gelar Rank" val={userRank.name} icon={<Trophy size={28}/>} color="emerald" />
-                <StatCard label="Saldo Komisi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
-              </div>
+              {!isAdmin && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+                  <StatCard label="Reward Points" val={userPoints + " PTS"} icon={<Award size={28}/>} color="purple" />
+                  <StatCard label="Materi Selesai" val={`${completedLessons.length} Materi`} icon={<CheckCircle2 size={28}/>} color="indigo" />
+                  <StatCard label="Gelar Rank" val={userRank.name} icon={<Trophy size={28}/>} color="emerald" />
+                  <StatCard label="Saldo Komisi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB: DAILY QUIZ (V13 EDU-GAMIFICATION) */}
-          {activeTab === 'quiz' && !isAdmin && (
-             <div className="animate-fadeIn max-w-3xl mx-auto space-y-8">
-                <div className="text-center space-y-3 mb-10">
-                   <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2"><BookOpen size={32}/></div>
-                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Kuis Pintar Edukasi</h2>
-                   <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Asah wawasan digital Anda setiap hari. Jawab dengan benar dan dapatkan <strong className="text-emerald-600">+20 Poin Reward</strong>, jawab salah tetap dapat <strong className="text-amber-500">+5 Poin</strong> partisipasi.</p>
+          {/* TAB: E-LEARNING (V13 ACADEMY) */}
+          {activeTab === 'elearning' && (
+             <div className="animate-fadeIn space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                  <div>
+                    <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">ProSpace Academy</h2>
+                    <p className="text-slate-500 font-medium">Platform e-learning interaktif. Pelajari materi, kerjakan kuis, dan kumpulkan poin.</p>
+                  </div>
                 </div>
 
-                <div className="bg-white rounded-[2.5rem] p-8 sm:p-12 border border-slate-200 shadow-2xl relative overflow-hidden">
-                    {userData?.lastQuizDate === new Date().toDateString() ? (
-                        <div className="text-center py-10">
-                            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40}/></div>
-                            <h3 className="text-2xl font-black text-slate-900 mb-2">Anda Sudah Menyelesaikan Kuis Hari Ini!</h3>
-                            <p className="text-slate-500 mb-8">Berikut adalah jawaban dan penjelasan kuis hari ini:</p>
+                <div className="flex flex-col lg:flex-row gap-8">
+                   {/* Curriculum Sidebar */}
+                   <div className="w-full lg:w-1/3 bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 h-max">
+                     <h3 className="font-black text-lg mb-6 text-slate-800">Kurikulum</h3>
+                     {E_LEARNING_MODULES.map(mod => (
+                        <div key={mod.id} className="mb-6">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">{mod.title}</h4>
+                          <div className="space-y-2">
+                            {mod.lessons.map(lesson => {
+                               const isDone = completedLessons.includes(lesson.id);
+                               const isActive = activeLessonId === lesson.id;
+                               return (
+                                 <button 
+                                    key={lesson.id}
+                                    onClick={() => {setActiveCourseId(mod.id); setActiveLessonId(lesson.id); setQuizSelection(null);}} 
+                                    className={`w-full text-left flex items-center justify-between p-3.5 rounded-xl transition-all ${isActive ? 'bg-indigo-50 border-indigo-200 border text-indigo-700 shadow-sm' : 'hover:bg-slate-50 border border-transparent text-slate-600'}`}
+                                 >
+                                   <div className="flex items-center gap-3">
+                                     <div className={`p-1.5 rounded-lg ${isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                        {lesson.type === 'video' ? <PlaySquare size={16}/> : lesson.type === 'quiz' ? <HelpCircle size={16}/> : <FileText size={16}/>}
+                                     </div>
+                                     <span className="text-sm font-bold truncate pr-2">{lesson.title}</span>
+                                   </div>
+                                   {isDone && <CheckCircle2 size={18} className="text-emerald-500 shrink-0"/>}
+                                 </button>
+                               )
+                            })}
+                          </div>
+                        </div>
+                     ))}
+                   </div>
+
+                   {/* Main Content Viewer */}
+                   <div className="w-full lg:w-2/3 bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col h-max">
+                      {/* Video Player */}
+                      {activeLesson.type === 'video' && (
+                         <div className="w-full aspect-video bg-slate-900 relative">
+                            <iframe width="100%" height="100%" src={activeLesson.content} title="Video Player" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                         </div>
+                      )}
+                      
+                      <div className="p-8 sm:p-12 flex-1 flex flex-col">
+                         <div className="mb-8">
+                            <span className="px-3 py-1.5 bg-indigo-50 text-indigo-600 font-black text-[9px] uppercase tracking-widest rounded-full mb-4 inline-block">
+                               Materi Pembelajaran
+                            </span>
+                            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight mb-4">{activeLesson.title}</h2>
                             
-                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-left">
-                                <p className="font-bold text-slate-800 mb-4">{todayQuiz.q}</p>
-                                <p className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-1">Jawaban Benar:</p>
-                                <p className="text-slate-700 mb-4">{todayQuiz.options[todayQuiz.answer]}</p>
-                                <p className="text-sm font-black text-indigo-600 uppercase tracking-widest mb-1">Penjelasan Singkat:</p>
-                                <p className="text-slate-600 text-sm leading-relaxed">{todayQuiz.exp}</p>
-                            </div>
-                            <button onClick={()=>setActiveTab('dashboard')} className="mt-8 bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-sm hover:bg-indigo-600 transition-colors">KEMBALI KE DASHBOARD</button>
-                        </div>
-                    ) : (
-                        <div>
-                            <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
-                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-full">KUIS HARI INI</span>
-                                <span className="font-bold text-slate-400 text-xs">{new Date().toLocaleDateString('id-ID')}</span>
-                            </div>
-                            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mb-8 leading-relaxed">{todayQuiz.q}</h3>
-                            <div className="space-y-3">
-                                {todayQuiz.options.map((opt, idx) => (
-                                    <button 
-                                        key={idx} 
-                                        onClick={() => handleAnswerQuiz(idx)}
-                                        disabled={isQuizProcessing}
-                                        className={`w-full text-left p-5 rounded-2xl border-2 font-bold text-sm sm:text-base transition-all hover:border-indigo-600 hover:bg-indigo-50 ${selectedQuizAnswer === idx ? 'border-indigo-600 bg-indigo-50 scale-[1.02]' : 'border-slate-200 bg-white'}`}
-                                    >
-                                        <span className="inline-block w-8 h-8 bg-slate-100 text-slate-500 rounded-full text-center leading-8 mr-4">{['A','B','C','D'][idx]}</span>
-                                        {opt}
-                                    </button>
-                                ))}
-                            </div>
-                            {isQuizProcessing && <p className="text-center text-sm font-bold text-indigo-600 mt-6 animate-pulse">Menyimpan Poin Anda...</p>}
-                        </div>
-                    )}
+                            {/* Article / Desc text */}
+                            {activeLesson.type !== 'quiz' && (
+                               <p className="text-slate-600 leading-relaxed text-lg font-medium" dangerouslySetInnerHTML={{__html: activeLesson.desc || activeLesson.content}}></p>
+                            )}
+
+                            {/* Quiz Interactive UI */}
+                            {activeLesson.type === 'quiz' && (
+                               <div className="mt-4">
+                                  <p className="text-lg font-bold text-slate-800 mb-6">{activeLesson.question}</p>
+                                  <div className="space-y-3">
+                                     {activeLesson.options.map((opt, idx) => (
+                                        <button 
+                                           key={idx} 
+                                           onClick={() => setQuizSelection(idx)}
+                                           disabled={isLessonCompleted}
+                                           className={`w-full text-left p-5 rounded-2xl border-2 font-bold text-sm sm:text-base transition-all ${quizSelection === idx ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300'} ${isLessonCompleted && activeLesson.answer === idx ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : ''}`}
+                                        >
+                                           <span className="inline-block w-8 h-8 bg-slate-100 text-slate-500 rounded-full text-center leading-8 mr-4">{['A','B','C','D'][idx]}</span>
+                                           {opt}
+                                           {isLessonCompleted && activeLesson.answer === idx && <CheckCircle2 className="inline float-right text-emerald-500 mt-1" size={20}/>}
+                                        </button>
+                                     ))}
+                                  </div>
+                                  {isLessonCompleted && (
+                                     <div className="mt-8 bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                                        <p className="text-sm font-black text-indigo-600 uppercase tracking-widest mb-2">Penjelasan:</p>
+                                        <p className="text-slate-700 font-medium">{activeLesson.exp}</p>
+                                     </div>
+                                  )}
+                               </div>
+                            )}
+                         </div>
+
+                         {/* Action Footer */}
+                         <div className="mt-auto pt-8 border-t border-slate-100 flex items-center justify-between">
+                            <p className="text-slate-500 font-bold text-sm flex items-center gap-2"><Award className="text-amber-500" size={18}/> Hadiah +{activeLesson.points} Poin</p>
+                            
+                            {isLessonCompleted ? (
+                               <button disabled className="bg-emerald-100 text-emerald-700 px-6 py-3 rounded-xl font-black text-sm flex items-center gap-2 cursor-not-allowed">
+                                  <CheckCircle2 size={18}/> MATERI SELESAI
+                               </button>
+                            ) : (
+                               <button 
+                                  onClick={() => handleCompleteLearning(activeLesson, activeLesson.type === 'quiz', quizSelection)}
+                                  className="bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-black text-sm hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-1"
+                               >
+                                  {activeLesson.type === 'quiz' ? 'KIRIM JAWABAN' : 'TANDAI SELESAI'}
+                               </button>
+                            )}
+                         </div>
+                      </div>
+                   </div>
                 </div>
              </div>
           )}
 
           {/* TAB: FOCUS ROOM (V12) */}
-          {activeTab === 'focus' && !isAdmin && (
+          {activeTab === 'focus' && (
              <div className="animate-fadeIn max-w-4xl mx-auto">
                 <div className="text-center space-y-4 mb-10">
                    <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full mb-2"><Headphones size={32}/></div>
@@ -1126,7 +1204,7 @@ export default function App() {
           {activeTab === 'files' && (
              <div className="space-y-10 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                  <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Katalog Materi Digital</h2>
+                  <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Katalog Master File</h2>
                   <div className="relative w-full sm:w-72">
                     <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
                     <input type="text" placeholder="Cari materi..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
@@ -1191,7 +1269,7 @@ export default function App() {
           )}
 
           {/* TAB: TRANSACTIONS */}
-          {activeTab === 'transactions' && !isAdmin && (
+          {activeTab === 'transactions' && (
             <div className="animate-fadeIn space-y-10">
                <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Riwayat Pembelian</h2>
                <div className="grid grid-cols-1 gap-4">
@@ -1257,7 +1335,7 @@ export default function App() {
           )}
 
           {/* TAB: AFFILIATE */}
-          {activeTab === 'affiliate' && !isAdmin && (
+          {activeTab === 'affiliate' && (
              <div className="animate-fadeIn space-y-10">
                 <h2 className="text-3xl font-black text-slate-900">Program Afiliasi</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1340,7 +1418,7 @@ export default function App() {
                                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{f.category} • Tier {f.reqLevel}</p>
                             </div>
                             <div className="flex gap-2">
-                               <button onClick={()=>{setEditingId(f.id); setProductForm({name:f.name, size:f.size, reqLevel:f.reqLevel, url:f.url, category:f.category}); window.scrollTo({top:0});}} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Edit3 size={16}/></button>
+                               <button onClick={()=>{setEditingId(f.id); setProductForm({name:f.name, size:f.size, reqLevel:f.reqLevel, url:f.url, category:f.category}); window.scrollTo({top:0, behavior:'smooth'});}} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Edit3 size={16}/></button>
                                <button onClick={async ()=>{if(window.confirm('Hapus file ini?')) await deleteDoc(doc(db,'artifacts',appId,'public','data','files',f.id));}} className="p-3 bg-rose-50 text-rose-600 rounded-xl"><Trash2 size={16}/></button>
                             </div>
                          </div>
