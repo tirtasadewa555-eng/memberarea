@@ -121,9 +121,11 @@ export default function App() {
 
   const currentTier = userData?.subscriptionLevel || 0;
 
-  // Filtered Data
+  // Filtered Data (Admin Realtime Users)
   const filteredUsers = useMemo(() => {
-    return allUsers.filter(u => u.name?.toLowerCase().includes(searchUserQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchUserQuery.toLowerCase()));
+    return allUsers
+      .filter(u => u.name?.toLowerCase().includes(searchUserQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchUserQuery.toLowerCase()))
+      .sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0)); // Urutkan member terbaru di atas
   }, [allUsers, searchUserQuery]);
 
   const filteredFiles = useMemo(() => {
@@ -163,6 +165,7 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
+  // DATA SYNC REALTIME
   useEffect(() => {
     if (!user || !isConfigReady) return;
 
@@ -238,18 +241,20 @@ export default function App() {
       window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
       
       setCheckoutPkg(null);
-      showToast("Pesanan dibuat. Konfirmasi via WA.");
+      showToast("Pesanan dibuat. Menunggu validasi admin.");
       setActiveTab('transactions');
     } catch (err) { showToast("Gagal membuat pesanan", "error"); }
   };
 
+  // FUNGSI ADMIN: Validasi Pembayaran & Buka Akses Member
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
+          // Update level member ke package yang dibeli
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
-          showToast("Pembayaran Disetujui & Akses Dibuka!");
+          showToast("Pembayaran Disetujui! Akses member telah dibuka.");
       } else if (action === 'reject') {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
           showToast("Pembayaran Ditolak.", "error");
@@ -261,15 +266,14 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { subscriptionLevel: level });
       await updateDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), { subscriptionLevel: level });
-      showToast('Status member diperbarui');
+      showToast('Status member diperbarui secara realtime.');
     } catch (err) { showToast('Akses ditolak', 'error'); }
   };
 
   const deleteMemberData = async (uid) => {
-    if(!window.confirm("YAKIN HAPUS DATA MEMBER INI? Akses mereka akan hilang.")) return;
+    if(!window.confirm("YAKIN HAPUS DATA MEMBER INI? Data registry akan dihapus permanen.")) return;
     try {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid));
-        // Note: Actual Firebase Auth deletion requires Admin SDK, removing registry acts as ban in UI context.
         showToast('Data Registry Member Dihapus', 'error');
     } catch (err) { showToast('Gagal menghapus', 'error'); }
   }
@@ -409,7 +413,7 @@ export default function App() {
               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Admin Center</p>
               <NavBtn active={activeTab==='admin_overview'} onClick={()=>{setActiveTab('admin_overview'); closeSidebarMobile();}} icon={<Activity size={20}/>} label="Overview" />
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
-              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Kelola Member" />
+              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member Realtime" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
               <div className="my-6 border-b border-slate-100"></div>
             </>
@@ -419,7 +423,7 @@ export default function App() {
           <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
           <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="File Master" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
-          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" />
+          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={transactions.filter(t=>t.userId === user?.uid && t.status==='pending').length} />
           
         </div>
 
@@ -480,9 +484,12 @@ export default function App() {
                     <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 relative z-10">Total Pendapatan</p>
                     <p className="text-3xl font-black mt-2 font-['Outfit'] relative z-10">Rp {adminStats.totalRev.toLocaleString('id-ID')}</p>
                  </div>
-                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member</p>
+                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member Realtime</p>
                     <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{allUsers.length}</p>
+                    {filteredUsers.filter(u => (new Date() - new Date(u.joinDate)) < 86400000).length > 0 && (
+                      <span className="absolute top-6 right-6 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
+                    )}
                  </div>
                  <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Produk</p>
@@ -573,7 +580,7 @@ export default function App() {
                   {/* Search File Box */}
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                    <input type="text" placeholder="Cari file..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full sm:w-72 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
+                    <input type="text" placeholder="Cari nama file..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full sm:w-72 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
                   </div>
                 </div>
                 
@@ -606,9 +613,15 @@ export default function App() {
                   {[1, 2, 3].map(lv => {
                     const isActive = currentTier === lv;
                     const isPassed = currentTier > lv;
+                    // Cek apakah ada transaksi pending khusus untuk level ini & milik user ini
+                    const isPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
+                    const isDisabled = isActive || isPassed || isPending;
+
                     return (
-                      <div key={lv} className={`bg-white rounded-[2rem] sm:rounded-[3rem] border-2 p-8 sm:p-10 flex flex-col h-full relative transition-all duration-300 ${isActive ? 'border-indigo-600 shadow-2xl shadow-indigo-100 lg:-translate-y-4' : 'border-slate-100 hover:border-slate-300 hover:shadow-xl'}`}>
+                      <div key={lv} className={`bg-white rounded-[2rem] sm:rounded-[3rem] border-2 p-8 sm:p-10 flex flex-col h-full relative transition-all duration-300 ${isActive ? 'border-indigo-600 shadow-2xl shadow-indigo-100 lg:-translate-y-4' : isPending ? 'border-amber-400 shadow-lg shadow-amber-50' : 'border-slate-100 hover:border-slate-300 hover:shadow-xl'}`}>
                          {isActive && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-200 w-max">Paket Aktif Anda</div>}
+                         {isPending && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-white px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-xl shadow-amber-200 w-max flex items-center gap-1"><Clock size={14}/> Menunggu Validasi</div>}
+                         
                          <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 font-['Outfit']">{TIER_LEVELS[lv].name}</h3>
                          <p className="text-slate-500 text-sm font-medium mb-6">Akses ke semua produk level {TIER_LEVELS[lv].name}.</p>
                          <div className="flex items-end gap-1 mb-8">
@@ -622,8 +635,8 @@ export default function App() {
                             {lv >= 2 && <li className="flex items-start gap-3"><CheckCircle className="text-emerald-500 shrink-0 mt-0.5" size={20}/><span className="text-sm font-bold text-slate-700">Prioritas Customer Support</span></li>}
                             {lv === 3 && <li className="flex items-start gap-3"><CheckCircle className="text-emerald-500 shrink-0 mt-0.5" size={20}/><span className="text-sm font-bold text-slate-700">Lisensi PLR (Jual Ulang)</span></li>}
                          </ul>
-                         <button onClick={() => setCheckoutPkg({...TIER_LEVELS[lv], level: lv})} disabled={isActive || isPassed} className={`w-full py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black tracking-widest text-xs sm:text-sm transition-all ${isActive || isPassed ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-xl'}`}>
-                           {isActive ? 'STATUS AKTIF' : isPassed ? 'SUDAH TERLEWATI' : 'PILIH PAKET'}
+                         <button onClick={() => setCheckoutPkg({...TIER_LEVELS[lv], level: lv})} disabled={isDisabled} className={`w-full py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black tracking-widest text-xs sm:text-sm transition-all ${isDisabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-xl'}`}>
+                           {isActive ? 'STATUS AKTIF' : isPassed ? 'SUDAH TERLEWATI' : isPending ? 'PROSES VALIDASI' : 'PILIH PAKET'}
                          </button>
                       </div>
                     )
@@ -647,7 +660,7 @@ export default function App() {
                ) : (
                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
                     {transactions.map(t => (
-                      <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm hover:shadow-lg transition-all">
+                      <div key={t.id} className={`bg-white p-6 sm:p-8 rounded-[2rem] border-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm transition-all ${t.status === 'pending' ? 'border-amber-200' : 'border-slate-100 hover:shadow-lg'}`}>
                          <div className="flex items-center gap-4 sm:gap-6 w-full md:w-auto">
                             <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : t.status === 'rejected' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
                                {t.status === 'pending' ? <Clock size={28}/> : t.status === 'rejected' ? <XCircle size={28}/> : <CheckCircle size={28}/>}
@@ -655,14 +668,14 @@ export default function App() {
                             <div className="flex-1 min-w-0">
                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[2px] truncate">{t.id}</p>
                                <h4 className="text-lg sm:text-xl font-black text-slate-800 leading-tight mt-1 truncate">Paket {t.packageName}</h4>
-                               <p className="text-xs sm:text-sm font-bold text-slate-500 mt-1">Rp {t.price.toLocaleString('id-ID')} • {new Date(t.createdAt).toLocaleDateString('id-ID')}</p>
+                               <p className="text-xs sm:text-sm font-bold text-slate-500 mt-1">Rp {t.price.toLocaleString('id-ID')} • {new Date(t.createdAt).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</p>
                             </div>
                          </div>
                          <div className="flex flex-row md:flex-col items-center md:items-end justify-between w-full md:w-auto gap-4 md:gap-3 border-t md:border-none border-slate-100 pt-4 md:pt-0">
                             <div className="text-left md:text-right">
                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:block">Status</p>
                                <p className={`font-black uppercase text-xs sm:text-sm ${t.status === 'pending' ? 'text-amber-500' : t.status === 'rejected' ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                 {t.status === 'pending' ? 'Menunggu Validasi' : t.status === 'rejected' ? 'Ditolak/Gagal' : 'Pembayaran Lunas'}
+                                 {t.status === 'pending' ? 'Menunggu Validasi' : t.status === 'rejected' ? 'Ditolak/Gagal' : 'Pembayaran Sukses'}
                                </p>
                             </div>
                             {t.status === 'pending' && (
@@ -679,14 +692,14 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN - MANAGE USERS */}
+          {/* TAB: ADMIN - MANAGE USERS (REALTIME DATABASE) */}
           {/* ==================================================== */}
           {activeTab === 'admin_users' && isAdmin && (
             <div className="animate-fadeIn space-y-6 sm:space-y-10">
                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                   <div>
-                    <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member</h2>
-                    <p className="text-slate-500 text-sm mt-1">Kelola dan update manual level akses pengguna.</p>
+                    <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member Realtime</h2>
+                    <p className="text-slate-500 text-sm mt-1">Pantau pendaftar terbaru secara instan. Member baru akan ada di urutan teratas.</p>
                   </div>
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
@@ -694,42 +707,57 @@ export default function App() {
                   </div>
                </div>
                
-               <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
+               <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl relative">
+                  {/* Indikator Realtime Header */}
+                  <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center text-xs font-bold text-slate-500">
+                     <span className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div> Live Sync Active</span>
+                     <span>Total Record: {filteredUsers.length}</span>
+                  </div>
+
                   <div className="overflow-x-auto w-full custom-scrollbar max-h-[600px]">
                     <table className="w-full text-left min-w-[800px]">
                       <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10">
                         <tr>
-                          <th className="px-6 sm:px-8 py-5">Nama & Email</th>
-                          <th className="px-6 sm:px-8 py-5">Status Paket</th>
-                          <th className="px-6 sm:px-8 py-5 text-center">Ubah Level</th>
-                          <th className="px-6 sm:px-8 py-5 text-center">Tindakan</th>
+                          <th className="px-6 sm:px-8 py-5">Identitas Member</th>
+                          <th className="px-6 sm:px-8 py-5">Tingkat Langganan</th>
+                          <th className="px-6 sm:px-8 py-5 text-center">Ubah Akses Manual</th>
+                          <th className="px-6 sm:px-8 py-5 text-center">Cabut Akses</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {filteredUsers.length === 0 ? (
-                           <tr><td colSpan="4" className="px-8 py-16 text-center text-slate-400 font-bold italic">Member tidak ditemukan.</td></tr>
+                           <tr><td colSpan="4" className="px-8 py-16 text-center text-slate-400 font-bold italic">Member tidak ditemukan atau database kosong.</td></tr>
                         ) : (
-                          filteredUsers.map(m => (
-                            <tr key={m.id} className="hover:bg-slate-50 transition-all">
-                              <td className="px-6 sm:px-8 py-4 sm:py-6">
-                                 <p className="font-black text-slate-900 text-sm">{m.name || 'User Baru'}</p>
-                                 <p className="text-xs text-slate-500 font-medium mt-0.5">{m.email}</p>
-                              </td>
-                              <td className="px-6 sm:px-8 py-4 sm:py-6">
-                                 <span className={`px-3 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${m.subscriptionLevel === 0 ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>{TIER_LEVELS[m.subscriptionLevel]?.name || 'Free'}</span>
-                              </td>
-                              <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
-                                 <div className="flex justify-center gap-1 sm:gap-2 flex-wrap">
-                                   {[0, 1, 2, 3].map(lv => (
-                                     <button key={lv} onClick={()=>updateMemberTier(m.uid, lv)} className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-600 hover:text-indigo-600'}`}>Set {TIER_LEVELS[lv].name}</button>
-                                   ))}
-                                 </div>
-                              </td>
-                              <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
-                                 <button onClick={()=>deleteMemberData(m.uid)} className="p-2 bg-rose-50 hover:bg-rose-500 text-rose-500 hover:text-white rounded-xl transition-colors inline-flex"><Trash2 size={16}/></button>
-                              </td>
-                            </tr>
-                          ))
+                          filteredUsers.map(m => {
+                            // Cek apakah user mendaftar dalam kurun waktu 24 jam terakhir
+                            const isNew = m.joinDate ? (new Date() - new Date(m.joinDate)) < 86400000 : false;
+                            
+                            return (
+                              <tr key={m.id} className="hover:bg-slate-50 transition-all">
+                                <td className="px-6 sm:px-8 py-4 sm:py-6">
+                                   <p className="font-black text-slate-900 text-sm flex items-center">
+                                      {m.name || 'User Baru'}
+                                      {isNew && <span className="ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-600 rounded-full text-[8px] uppercase tracking-widest font-black">Baru</span>}
+                                   </p>
+                                   <p className="text-[11px] text-slate-500 font-medium mt-0.5">{m.email}</p>
+                                   <p className="text-[9px] text-slate-400 font-mono mt-1">Terdaftar: {m.joinDate ? new Date(m.joinDate).toLocaleString('id-ID') : '-'}</p>
+                                </td>
+                                <td className="px-6 sm:px-8 py-4 sm:py-6">
+                                   <span className={`px-3 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${m.subscriptionLevel === 0 ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>{TIER_LEVELS[m.subscriptionLevel]?.name || 'Free'}</span>
+                                </td>
+                                <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
+                                   <div className="flex justify-center gap-1 sm:gap-2 flex-wrap">
+                                     {[0, 1, 2, 3].map(lv => (
+                                       <button key={lv} onClick={()=>updateMemberTier(m.uid, lv)} className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-600 hover:text-indigo-600'}`}>Set {TIER_LEVELS[lv].name}</button>
+                                     ))}
+                                   </div>
+                                </td>
+                                <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
+                                   <button onClick={()=>deleteMemberData(m.uid)} className="p-2.5 bg-rose-50 hover:bg-rose-500 text-rose-500 hover:text-white rounded-xl transition-colors inline-flex" title="Hapus Data"><Trash2 size={16}/></button>
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -751,30 +779,29 @@ export default function App() {
                           <tr><th className="px-6 sm:px-8 py-5">Invoice & Member</th><th className="px-6 sm:px-8 py-5">Tagihan</th><th className="px-6 sm:px-8 py-5">Status</th><th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin</th></tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {transactions.length === 0 ? (
-                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">Belum ada data transaksi.</td></tr>
+                          {transactions.filter(t => t.status==='pending').length === 0 ? (
+                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">✅ Tidak ada pembayaran tertunda yang perlu divalidasi.</td></tr>
                           ) : (
-                            transactions.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                            transactions.filter(t => t.status==='pending')
+                            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))
+                            .map(t => (
                               <tr key={t.id} className="hover:bg-slate-50 transition-all">
                                  <td className="px-6 sm:px-8 py-6">
                                     <p className="font-black text-slate-900 text-sm">{t.userName}</p>
                                     <p className="text-[10px] text-slate-500 font-bold font-mono mt-1">{t.id}</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">{new Date(t.createdAt).toLocaleString('id-ID')}</p>
                                  </td>
                                  <td className="px-6 sm:px-8 py-6 font-black text-indigo-600 text-sm sm:text-base">Rp {t.price.toLocaleString('id-ID')} <span className="block text-[10px] text-slate-400 mt-1 font-sans">{t.packageName}</span></td>
                                  <td className="px-6 sm:px-8 py-6">
-                                   <span className={`px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${t.status === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-200' : t.status === 'rejected' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
-                                      {t.status}
+                                   <span className="bg-amber-50 border border-amber-200 text-amber-600 px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center w-max gap-1">
+                                      <Clock size={12}/> PENDING
                                    </span>
                                  </td>
                                  <td className="px-6 sm:px-8 py-6 text-center">
-                                    {t.status === 'pending' ? (
                                       <div className="flex justify-center gap-2">
                                         <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-indigo-200 hover:-translate-y-1 transition-all flex items-center gap-1"><CheckCircle size={14}/> SETUJUI</button>
-                                        <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1"><XCircle size={14}/> TOLAK</button>
+                                        <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1" title="Tolak jika bukti palsu/tidak ada"><XCircle size={14}/> TOLAK</button>
                                       </div>
-                                    ) : (
-                                      <span className="text-xs font-bold text-slate-400">Selesai</span>
-                                    )}
                                  </td>
                               </tr>
                             ))
@@ -1007,11 +1034,11 @@ function ProFileCard({ file, currentTier }) {
       </div>
       <div className="relative z-10 mt-auto">
         {isAccessible ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] shadow-xl transition-all hover:bg-indigo-600 active:scale-95 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
-            <Download size={18}/> DOWNLOAD
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 sm:bg-indigo-600 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] shadow-xl sm:shadow-2xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-2 active:translate-y-0 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
+            <Download size={18} className="sm:w-5 sm:h-5"/> UNDUH SEKARANG
           </a>
         ) : (
-          <div className="w-full bg-slate-200 text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-300">Harus Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
+          <div className="w-full bg-slate-200 text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-300">Minimal Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
         )}
       </div>
     </div>
