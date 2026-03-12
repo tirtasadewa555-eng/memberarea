@@ -27,7 +27,8 @@ import {
   ShieldCheck, CreditCard, Settings, Menu, X, Bell, Trash2, Edit3, ChevronRight, 
   FileText, Video, Box, Lock, MessageSquare, Banknote, CheckCircle, Clock, 
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
-  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, CheckSquare, Square, Award, Sparkles, Crown
+  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
+  CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck
 } from 'lucide-react';
 
 // ==========================================
@@ -42,7 +43,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: "1:9418923099:web:f0275b81b802c08bb3737e"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v9-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v10-system';
 const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -84,12 +85,13 @@ export default function App() {
   const [tickets, setTickets] = useState([]); 
   const [withdrawals, setWithdrawals] = useState([]); 
   const [coupons, setCoupons] = useState([]); 
-  const [chatMessages, setChatMessages] = useState([]); // Community Chat State
+  const [chatMessages, setChatMessages] = useState([]); 
   
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
   const [selectedUserDetail, setSelectedUserDetail] = useState(null); 
+  const [showCertificate, setShowCertificate] = useState(false); // State Sertifikat
   
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [searchFileQuery, setSearchFileQuery] = useState('');
@@ -114,13 +116,13 @@ export default function App() {
   const affiliateBalance = userData?.commissionBalance || 0;
   const completedFiles = userData?.completedFiles || [];
 
-  // Gamification Logic (Points & Ranks)
+  // Poin Gamifikasi (Progress + Afiliasi + Poin Checkin Harian)
   const userPoints = useMemo(() => {
-    let pts = 0;
-    if (completedFiles.length) pts += completedFiles.length * 50; // 50 poin per materi selesai
-    if (affiliateBalance) pts += Math.floor(affiliateBalance / 10000); // 1 poin per 10rb komisi
+    let pts = userData?.rewardPoints || 0;
+    if (completedFiles.length) pts += completedFiles.length * 50; 
+    if (affiliateBalance) pts += Math.floor(affiliateBalance / 10000); 
     return pts;
-  }, [completedFiles, affiliateBalance]);
+  }, [completedFiles, affiliateBalance, userData?.rewardPoints]);
 
   const userRank = useMemo(() => {
     if(userPoints >= 1000) return { name: 'Diamond', color: 'text-purple-600', bg: 'bg-purple-100', border:'border-purple-200', icon: <Crown size={14}/> };
@@ -169,12 +171,13 @@ export default function App() {
         .slice(0, 10);
   }, [allUsers, withdrawals]);
 
+  const accessibleFiles = useMemo(() => files.filter(f => currentTier >= f.reqLevel), [files, currentTier]);
+  
   const progressData = useMemo(() => {
-    const accessible = files.filter(f => currentTier >= f.reqLevel);
-    if(accessible.length === 0) return 0;
-    const completedAccessFiles = completedFiles.filter(id => accessible.some(f => f.id === id));
-    return Math.round((completedAccessFiles.length / accessible.length) * 100);
-  }, [files, currentTier, completedFiles]);
+    if(accessibleFiles.length === 0) return 0;
+    const completedAccessFiles = completedFiles.filter(id => accessibleFiles.some(f => f.id === id));
+    return Math.round((completedAccessFiles.length / accessibleFiles.length) * 100);
+  }, [accessibleFiles, completedFiles]);
 
   const finalPrice = useMemo(() => {
     if (!checkoutPkg) return 0;
@@ -194,7 +197,7 @@ export default function App() {
     el.select();
     document.execCommand('copy');
     document.body.removeChild(el);
-    showToast("Link Referral berhasil disalin!");
+    showToast("Link berhasil disalin!");
   };
 
   // Scroll to bottom on new chat
@@ -210,7 +213,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
-    if (refCode) localStorage.setItem('affiliate_ref_v9', refCode);
+    if (refCode) localStorage.setItem('affiliate_ref_v10', refCode);
 
     if (!isConfigReady) { setLoading(false); return; }
     const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } };
@@ -240,7 +243,6 @@ export default function App() {
     const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     
-    // Sinkronisasi Live Chat
     const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), (s) => {
        setChatMessages(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -271,17 +273,17 @@ export default function App() {
     try {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const storedRef = localStorage.getItem('affiliate_ref_v9'); 
+        const storedRef = localStorage.getItem('affiliate_ref_v10'); 
         
         const init = { 
             name: formData.name, email: formData.email, subscriptionLevel: 0, 
             joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0,
-            referredBy: storedRef || null, completedFiles: []
+            referredBy: storedRef || null, completedFiles: [], rewardPoints: 0, lastCheckInDate: ''
         };
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         
-        localStorage.removeItem('affiliate_ref_v9');
+        localStorage.removeItem('affiliate_ref_v10');
         showToast("Registrasi Berhasil!");
       } else {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
@@ -314,6 +316,50 @@ export default function App() {
         }
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { completedFiles: newCompleted });
     } catch(e) { showToast("Gagal menyimpan progress.", "error"); }
+  };
+
+  // GAMIFICATION: Daily Check-In
+  const handleDailyCheckIn = async () => {
+    const today = new Date().toDateString();
+    if (userData?.lastCheckInDate === today) {
+        return showToast("Anda sudah klaim poin hari ini. Kembali lagi besok!", "error");
+    }
+    try {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), {
+            rewardPoints: increment(10),
+            lastCheckInDate: today
+        });
+        showToast("Berhasil klaim +10 Poin Harian! 🎉", "success");
+    } catch (e) { showToast("Gagal klaim poin.", "error"); }
+  };
+
+  // ADMIN ACTION: Export to CSV
+  const handleExportCSV = () => {
+      const headers = ["Nama", "Email", "Telepon", "Tanggal Daftar", "Level/Tier", "Saldo Komisi"];
+      const csvRows = [headers.join(",")];
+      
+      filteredUsers.forEach(u => {
+          const row = [
+              `"${u.name || 'Member'}"`,
+              `"${u.email || ''}"`,
+              `"${u.phone || 'Belum Diisi'}"`,
+              `"${new Date(u.joinDate).toLocaleDateString('id-ID')}"`,
+              `"${TIER_LEVELS[u.subscriptionLevel]?.name || 'Free'}"`,
+              `"${u.commissionBalance || 0}"`
+          ];
+          csvRows.push(row.join(","));
+      });
+      
+      const csvContent = csvRows.join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Data_Member_ProSpace_${new Date().toLocaleDateString('id-ID')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast("Data berhasil diexport ke CSV!");
   };
 
   // SEND CHAT (COMMUNITY)
@@ -786,6 +832,36 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'dashboard' && !isAdmin && (
             <div className="space-y-6 sm:space-y-10 animate-fadeIn">
+              
+              {/* Daily Login Gamification Component */}
+              <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-[2rem] p-6 sm:p-8 text-white shadow-xl shadow-purple-200 flex flex-col sm:flex-row justify-between items-center gap-6 border border-purple-400/30">
+                 <div className="text-center sm:text-left">
+                    <h3 className="text-xl sm:text-2xl font-black mb-1 flex items-center justify-center sm:justify-start gap-2"><Gift size={24} className="text-purple-200"/> Bonus Check-In Harian</h3>
+                    <p className="text-purple-200 text-xs sm:text-sm font-medium">Klik tombol klaim setiap hari untuk mendapatkan +10 Poin Reward. Kumpulkan poin untuk menaikkan rank Anda!</p>
+                 </div>
+                 <button 
+                    onClick={handleDailyCheckIn} 
+                    disabled={userData?.lastCheckInDate === new Date().toDateString()}
+                    className="w-full sm:w-auto bg-white text-purple-600 px-6 py-3.5 rounded-xl font-black text-sm hover:scale-105 transition-transform disabled:opacity-50 disabled:hover:scale-100 whitespace-nowrap shadow-lg">
+                    {userData?.lastCheckInDate === new Date().toDateString() ? 'SUDAH KLAIM HARI INI' : '🎁 KLAIM +10 POIN'}
+                 </button>
+              </div>
+
+              {/* Certificate Alert (100% Progress) */}
+              {progressData === 100 && accessibleFiles.length > 0 && (
+                <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-[2rem] p-6 sm:p-8 text-white shadow-xl shadow-emerald-200 flex flex-col sm:flex-row justify-between items-center gap-6 border border-emerald-400/30">
+                   <div className="text-center sm:text-left">
+                      <h3 className="text-xl sm:text-2xl font-black mb-1 flex items-center justify-center sm:justify-start gap-2"><BadgeCheck size={24} className="text-emerald-200"/> Luar Biasa! Akses Selesai 100%</h3>
+                      <p className="text-emerald-100 text-xs sm:text-sm font-medium">Anda telah menyelesaikan semua materi di paket lisensi Anda. Unduh sertifikat kelulusan Anda sekarang.</p>
+                   </div>
+                   <button 
+                      onClick={() => setShowCertificate(true)} 
+                      className="w-full sm:w-auto bg-white text-emerald-600 px-6 py-3.5 rounded-xl font-black text-sm hover:scale-105 transition-transform whitespace-nowrap shadow-lg flex justify-center items-center gap-2">
+                      <DownloadCloud size={18}/> CETAK E-CERTIFICATE
+                   </button>
+                </div>
+              )}
+
               {announcements.length > 0 && (
                 <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 p-5 rounded-3xl flex items-start sm:items-center gap-4">
                    <div className="bg-white p-3 rounded-2xl shadow-sm shrink-0"><Megaphone className="text-amber-500" size={24}/></div>
@@ -837,7 +913,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
                 <StatCard label="Poin Reward" val={userPoints + " PTS"} icon={<Award size={28}/>} color="purple" />
-                <StatCard label="Total Produk Buka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
+                <StatCard label="Total Produk Buka" val={`${accessibleFiles.length} File`} icon={<Box size={28}/>} color="indigo" />
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
                 <StatCard label="Saldo Afiliasi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
               </div>
@@ -845,7 +921,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: COMMUNITY (LIVE CHAT) - NEW FEATURE! */}
+          {/* TAB: COMMUNITY (LIVE CHAT) */}
           {/* ==================================================== */}
           {activeTab === 'community' && (
              <div className="animate-fadeIn h-[calc(100vh-140px)] flex flex-col">
@@ -1080,6 +1156,11 @@ export default function App() {
                                  {t.status === 'pending' ? 'Menunggu Validasi' : t.status === 'rejected' ? 'Ditolak/Gagal' : 'Pembayaran Sukses'}
                                </p>
                             </div>
+                            {t.status === 'pending' && (
+                              <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
+                                <MessageSquare size={16}/> INFO BUKTI KE WA
+                              </button>
+                            )}
                          </div>
                       </div>
                     ))}
@@ -1326,9 +1407,15 @@ export default function App() {
                     <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Database Member CRM</h2>
                     <p className="text-slate-500 text-sm mt-1">Pantau dan kelola data seluruh pengguna sistem Anda.</p>
                   </div>
-                  <div className="relative w-full sm:w-auto">
-                    <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                    <input type="text" placeholder="Cari nama / email..." value={searchUserQuery} onChange={e=>setSearchUserQuery(e.target.value)} className="w-full sm:w-80 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-80">
+                      <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
+                      <input type="text" placeholder="Cari nama / email..." value={searchUserQuery} onChange={e=>setSearchUserQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
+                    </div>
+                    {/* NEW EXPORT CSV BUTTON */}
+                    <button onClick={handleExportCSV} className="bg-emerald-500 text-white px-5 py-3 rounded-xl font-black text-[10px] hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 shadow-md shrink-0 uppercase tracking-widest">
+                       <DownloadCloud size={16}/> CSV
+                    </button>
                   </div>
                </div>
                
@@ -1568,6 +1655,52 @@ export default function App() {
       </div>
 
       {/* ========================================== */}
+      {/* MODAL CERTIFICATE (GAMIFICATION) */}
+      {/* ========================================== */}
+      {showCertificate && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm bg-slate-900/90 animate-fadeIn overflow-y-auto">
+           <div className="max-w-3xl w-full bg-white p-2 shadow-2xl relative">
+              <button onClick={()=>setShowCertificate(false)} className="absolute -top-4 -right-4 p-2 bg-rose-500 text-white rounded-full hover:bg-rose-600 transition-all z-10 shadow-lg"><X size={20}/></button>
+              
+              {/* E-Certificate Layout */}
+              <div id="printable-certificate" className="border-8 border-double border-indigo-100 p-10 sm:p-16 text-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-white relative">
+                 <div className="absolute top-10 left-10 text-indigo-200 opacity-30"><Award size={100}/></div>
+                 <div className="absolute bottom-10 right-10 text-emerald-200 opacity-30"><Trophy size={100}/></div>
+                 
+                 <h1 className="text-4xl sm:text-6xl font-black text-indigo-900 mb-2 font-serif uppercase tracking-widest">Sertifikat Kelulusan</h1>
+                 <p className="text-slate-500 font-bold tracking-widest uppercase mb-10">Diberikan secara resmi kepada:</p>
+                 
+                 <h2 className="text-5xl sm:text-6xl font-black text-slate-800 mb-8 border-b-2 border-indigo-200 pb-4 inline-block font-['Outfit']">{userData?.name || user?.email?.split('@')[0]}</h2>
+                 
+                 <p className="text-lg text-slate-600 max-w-lg mx-auto leading-relaxed mb-12">Atas dedikasi dan keberhasilannya dalam menyelesaikan seluruh <strong className="text-indigo-600">Katalog Materi Digital (100%)</strong> pada sistem ProSpace Membership.</p>
+                 
+                 <div className="flex justify-between items-end px-10">
+                    <div className="text-left">
+                       <p className="font-black text-slate-800 border-b border-slate-300 pb-1 mb-1">{new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                       <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Tanggal Lulus</p>
+                    </div>
+                    <div className="w-24 h-24 bg-gradient-to-tr from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-amber-200 border-4 border-white transform rotate-12">
+                       <div className="text-center leading-none">
+                          <p className="text-[10px] font-black uppercase">Official</p>
+                          <p className="text-xs font-black">CERTIFIED</p>
+                       </div>
+                    </div>
+                    <div className="text-right">
+                       <p className="font-black text-slate-800 border-b border-slate-300 pb-1 mb-1 font-['Outfit'] text-lg">PROSPACE ADMIN</p>
+                       <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">CEO & Founder</p>
+                    </div>
+                 </div>
+              </div>
+              
+              <div className="bg-slate-100 p-4 text-center">
+                 <p className="text-xs font-bold text-slate-500 mb-3">Silakan Screenshot atau Print halaman ini sebagai bukti kelulusan Anda.</p>
+                 <button onClick={()=>window.print()} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-sm hover:bg-indigo-700 transition-all inline-flex items-center gap-2"><DownloadCloud size={16}/> PRINT SERTIFIKAT</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
       {/* MODAL CHECKOUT & KONFIRMASI INTERNAL */}
       {/* ========================================== */}
       {checkoutPkg && (
@@ -1635,75 +1768,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL CRM DETAIL MEMBER (HANYA ADMIN) */}
-      {/* ========================================== */}
-      {selectedUserDetail && isAdmin && (
-         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-slate-900/80 animate-fadeIn">
-            <div className="max-w-2xl w-full bg-white rounded-[2rem] sm:rounded-[3rem] shadow-3xl overflow-hidden border border-white/20 flex flex-col max-h-[90vh]">
-               {/* Header Modal */}
-               <div className="p-6 sm:p-8 border-b border-slate-100 flex justify-between items-start bg-slate-50">
-                  <div className="flex items-center gap-4">
-                     <div className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center font-black text-xl shadow-lg shadow-indigo-200">
-                        {selectedUserDetail.name?.charAt(0).toUpperCase() || 'U'}
-                     </div>
-                     <div>
-                        <h3 className="text-xl sm:text-2xl font-black text-slate-900 font-['Outfit'] tracking-tight leading-none mb-1">{selectedUserDetail.name || 'Member'}</h3>
-                        <p className="text-sm font-bold text-slate-500">{selectedUserDetail.email}</p>
-                     </div>
-                  </div>
-                  <button onClick={()=>setSelectedUserDetail(null)} className="p-2 sm:p-3 bg-white rounded-xl sm:rounded-2xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all border border-slate-200 shadow-sm"><X size={20}/></button>
-               </div>
-               
-               {/* Body Modal (Scrollable) */}
-               <div className="p-6 sm:p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
-                  <div className="grid grid-cols-2 gap-4">
-                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Status Lisensi</p>
-                        <p className="font-black text-indigo-600 uppercase">{TIER_LEVELS[selectedUserDetail.subscriptionLevel]?.name || 'FREE'}</p>
-                     </div>
-                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Pendapatan Afiliasi</p>
-                        <p className="font-black text-emerald-600">Rp {leaderboardData.find(u => u.uid === selectedUserDetail.uid)?.totalEarned.toLocaleString('id-ID') || '0'}</p>
-                     </div>
-                  </div>
-
-                  <div>
-                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 ml-1">Detail Kontak & Pembayaran</p>
-                     <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3 text-sm">
-                        <div className="flex justify-between"><span className="font-bold text-slate-500">No. WhatsApp:</span> <span className="font-black text-slate-800">{selectedUserDetail.phone || 'Belum diisi'}</span></div>
-                        <div className="flex justify-between"><span className="font-bold text-slate-500">Nama Bank:</span> <span className="font-black text-slate-800">{selectedUserDetail.bank || 'Belum diisi'}</span></div>
-                        <div className="flex justify-between"><span className="font-bold text-slate-500">No. Rekening:</span> <span className="font-black text-slate-800">{selectedUserDetail.accountNo || 'Belum diisi'}</span></div>
-                        <div className="flex justify-between pt-3 border-t border-slate-200"><span className="font-bold text-slate-500">UID System:</span> <span className="font-mono text-[10px] text-slate-400">{selectedUserDetail.uid}</span></div>
-                        <div className="flex justify-between"><span className="font-bold text-slate-500">Direferensikan Oleh:</span> <span className="font-mono text-[10px] text-indigo-400">{selectedUserDetail.referredBy || 'Organik (Tidak ada)'}</span></div>
-                     </div>
-                  </div>
-
-                  <div>
-                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 ml-1">Riwayat Transaksi User Ini</p>
-                     <div className="space-y-3">
-                        {transactions.filter(t => t.userId === selectedUserDetail.uid).length === 0 ? (
-                           <div className="p-4 bg-white border border-slate-200 rounded-xl text-center text-sm font-bold text-slate-400">Belum ada transaksi.</div>
-                        ) : (
-                           transactions.filter(t => t.userId === selectedUserDetail.uid).map(t => (
-                              <div key={t.id} className="flex justify-between items-center p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-                                 <div>
-                                    <p className="font-black text-slate-800 text-sm">Paket {t.packageName}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">{new Date(t.createdAt).toLocaleDateString('id-ID')}</p>
-                                 </div>
-                                 <span className={`px-3 py-1 rounded-full text-[9px] uppercase tracking-widest font-black ${t.status === 'approved' ? 'bg-emerald-100 text-emerald-600' : t.status === 'rejected' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
-                                    {t.status}
-                                 </span>
-                              </div>
-                           ))
-                        )}
-                     </div>
-                  </div>
-               </div>
-            </div>
-         </div>
-      )}
-
       {/* Global CSS */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -1717,6 +1781,12 @@ export default function App() {
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        
+        @media print {
+            body * { visibility: hidden; }
+            #printable-certificate, #printable-certificate * { visibility: visible; }
+            #printable-certificate { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: none !important; }
+        }
       `}} />
     </div>
   );
