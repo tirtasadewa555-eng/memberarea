@@ -94,18 +94,21 @@ if (isConfigReady) {
 }
 
 export default function App() {
+  // --- States Utama ---
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   
+  // --- App States ---
   const [activeTab, setActiveTab] = useState('dashboard');
   const [files, setFiles] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   
+  // --- UI States ---
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
@@ -250,12 +253,16 @@ export default function App() {
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
+          // Tambahan Konfirmasi Keamanan
+          if(!window.confirm(`Yakin ingin menerima pembayaran dan UPGRADE INSTAN member ${trans.userName} ke paket ${trans.packageName}?`)) return;
+          
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
-          // Update level member ke package yang dibeli
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
           showToast("Pembayaran Disetujui! Akses member telah dibuka.");
       } else if (action === 'reject') {
+          if(!window.confirm(`Tolak pembayaran dari ${trans.userName}?`)) return;
+          
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
           showToast("Pembayaran Ditolak.", "error");
       }
@@ -263,6 +270,7 @@ export default function App() {
   };
 
   const updateMemberTier = async (uid, level) => {
+    if(!window.confirm(`Ubah level akses member ini ke tier ${TIER_LEVELS[level].name}?`)) return;
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { subscriptionLevel: level });
       await updateDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), { subscriptionLevel: level });
@@ -746,13 +754,15 @@ export default function App() {
                                    <span className={`px-3 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest ${m.subscriptionLevel === 0 ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>{TIER_LEVELS[m.subscriptionLevel]?.name || 'Free'}</span>
                                 </td>
                                 <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
-                                   <div className="flex justify-center gap-1 sm:gap-2 flex-wrap">
-                                     {[0, 1, 2, 3].map(lv => (
-                                       <button key={lv} onClick={()=>updateMemberTier(m.uid, lv)} className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-600 hover:text-indigo-600'}`}>Set {TIER_LEVELS[lv].name}</button>
-                                     ))}
-                                   </div>
-                                </td>
-                                <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
+                                 <div className="flex justify-center gap-1 sm:gap-2 flex-wrap">
+                                   {[0, 1, 2, 3].map(lv => (
+                                     <button key={lv} onClick={()=>updateMemberTier(m.uid, lv)} className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black border transition-all ${m.subscriptionLevel === lv ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-emerald-500 hover:text-emerald-600'}`}>
+                                       {m.subscriptionLevel === lv ? 'AKTIF' : `UPGRADE ${TIER_LEVELS[lv].name.toUpperCase()}`}
+                                     </button>
+                                   ))}
+                                 </div>
+                              </td>
+                              <td className="px-6 sm:px-8 py-4 sm:py-6 text-center">
                                    <button onClick={()=>deleteMemberData(m.uid)} className="p-2.5 bg-rose-50 hover:bg-rose-500 text-rose-500 hover:text-white rounded-xl transition-colors inline-flex" title="Hapus Data"><Trash2 size={16}/></button>
                                 </td>
                               </tr>
@@ -799,7 +809,7 @@ export default function App() {
                                  </td>
                                  <td className="px-6 sm:px-8 py-6 text-center">
                                       <div className="flex justify-center gap-2">
-                                        <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-indigo-200 hover:-translate-y-1 transition-all flex items-center gap-1"><CheckCircle size={14}/> SETUJUI</button>
+                                        <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-emerald-200 hover:-translate-y-1 transition-all flex items-center gap-1"><CheckCircle size={14}/> TERIMA & UPGRADE</button>
                                         <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1" title="Tolak jika bukti palsu/tidak ada"><XCircle size={14}/> TOLAK</button>
                                       </div>
                                  </td>
@@ -1014,6 +1024,7 @@ function ProFileCard({ file, currentTier }) {
   const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
     <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl' : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
+      {isAccessible && <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-sky-400"></div>}
       <div className="flex justify-between items-start mb-6 sm:mb-8 relative z-10">
         <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? 'bg-indigo-50 text-indigo-600 group-hover:scale-110' : 'bg-slate-200 text-slate-400'}`}>
           {file.category === 'Ebook' ? <FileText size={24} className="sm:w-7 sm:h-7"/> : file.category === 'Video' ? <Video size={24} className="sm:w-7 sm:h-7"/> : <Box size={24} className="sm:w-7 sm:h-7"/>}
