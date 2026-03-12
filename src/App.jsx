@@ -22,39 +22,11 @@ import {
   where
 } from 'firebase/firestore';
 import { 
-  LayoutDashboard, 
-  ShoppingBag, 
-  Users, 
-  UserCircle, 
-  LogOut, 
-  Plus, 
-  Search, 
-  Download, 
-  ShieldCheck, 
-  CreditCard, 
-  Settings,
-  Menu,
-  X,
-  Bell,
-  Trash2,
-  Edit3,
-  ChevronRight,
-  FileText,
-  Video,
-  Box,
-  Lock,
-  MessageSquare,
-  Banknote,
-  CheckCircle,
-  Clock,
-  Megaphone,
-  FolderLock,
-  ArrowRight,
-  AlertCircle,
-  Activity,
-  XCircle,
-  LifeBuoy,
-  MessageCircle
+  LayoutDashboard, ShoppingBag, Users, UserCircle, LogOut, Plus, Search, Download, 
+  ShieldCheck, CreditCard, Settings, Menu, X, Bell, Trash2, Edit3, ChevronRight, 
+  FileText, Video, Box, Lock, MessageSquare, Banknote, CheckCircle, Clock, 
+  Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
+  MessageCircle, Network, Wallet, Copy, Save, Star
 } from 'lucide-react';
 
 // ==========================================
@@ -70,7 +42,7 @@ const firebaseConfig = {
   measurementId: "G-RQBKYLD4K5"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v3-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v4-system';
 const ADMIN_EMAIL = "admin@website.com"; 
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -109,34 +81,32 @@ export default function App() {
   const [allUsers, setAllUsers] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
-  const [tickets, setTickets] = useState([]); // State untuk tiket bantuan
+  const [tickets, setTickets] = useState([]); 
+  const [withdrawals, setWithdrawals] = useState([]); 
   
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
   
-  // Search States
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [searchFileQuery, setSearchFileQuery] = useState('');
 
   const [authMode, setAuthMode] = useState('login');
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
   const [productForm, setProductForm] = useState({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
-  const [editingId, setEditingId] = useState(null);
-  
-  // State Form Tiket
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
+  
+  // Profile Editable State
+  const [profileForm, setProfileForm] = useState({ phone: '', bank: '', accountNo: '' });
+  const [editingId, setEditingId] = useState(null);
 
   const currentTier = userData?.subscriptionLevel || 0;
+  const affiliateBalance = userData?.commissionBalance || 0;
 
   const filteredUsers = useMemo(() => {
-    if (!searchUserQuery) {
-       return [...allUsers].sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
-    }
+    if (!searchUserQuery) return [...allUsers].sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
     const q = searchUserQuery.toLowerCase();
-    return allUsers
-      .filter(u => (u.name && u.name.toLowerCase().includes(q)) || (u.email && u.email.toLowerCase().includes(q)))
-      .sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
+    return allUsers.filter(u => (u.name && u.name.toLowerCase().includes(q)) || (u.email && u.email.toLowerCase().includes(q))).sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
   }, [allUsers, searchUserQuery]);
 
   const filteredFiles = useMemo(() => {
@@ -148,78 +118,66 @@ export default function App() {
     const totalRev = transactions.filter(t => t.status === 'approved').reduce((acc, curr) => acc + curr.price, 0);
     const pendingTrans = transactions.filter(t => t.status === 'pending').length;
     const openTickets = tickets.filter(t => t.status === 'open').length;
-    return { totalRev, pendingTrans, openTickets };
-  }, [transactions, tickets]);
+    const pendingWd = withdrawals.filter(w => w.status === 'pending').length;
+    return { totalRev, pendingTrans, openTickets, pendingWd };
+  }, [transactions, tickets, withdrawals]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
   };
 
+  const copyToClipboard = (text) => {
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    showToast("Link berhasil disalin!");
+  };
+
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
-    
-    const initAuth = async () => {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {}
-        }
-    };
+    const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } };
     initAuth();
-
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
-      
-      if (checkIsAdmin && activeTab === 'dashboard') {
-          setActiveTab('admin_overview');
-      }
+      if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
       setLoading(false);
     });
     return () => unsubAuth();
   }, []);
 
-  // DATA SYNC REALTIME
   useEffect(() => {
     if (!user || !isConfigReady) return;
 
     const unsubProfile = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
-      if (d.exists()) setUserData(d.data());
+      if (d.exists()) {
+         setUserData(d.data());
+         setProfileForm({ phone: d.data().phone || '', bank: d.data().bank || '', accountNo: d.data().accountNo || '' });
+      }
     });
 
-    const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => {
-      setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+    const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
-    const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => {
-      setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    // Transaksi & Tiket Bantuan Sync
-    let unsubTrans = () => {};
-    let unsubTickets = () => {};
-    let adminUnsub = () => {};
+    let unsubTrans = () => {}; let unsubTickets = () => {}; let unsubWd = () => {}; let adminUnsub = () => {};
 
     if (isAdmin) {
-      unsubTrans = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), (s) => {
-        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      unsubTickets = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), (s) => {
-        setTickets(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      adminUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => {
-        setAllUsers(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
+      unsubTrans = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), (s) => setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+      unsubTickets = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), (s) => setTickets(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+      unsubWd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), (s) => setWithdrawals(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+      adminUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => setAllUsers(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     } else {
-      unsubTrans = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid)), (s) => {
-        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
-      unsubTickets = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), where('userId', '==', user.uid)), (s) => {
-        setTickets(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      });
+      unsubTrans = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid)), (s) => setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+      unsubTickets = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), where('userId', '==', user.uid)), (s) => setTickets(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+      unsubWd = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), where('userId', '==', user.uid)), (s) => setWithdrawals(s.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     }
 
-    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubTrans(); unsubTickets(); adminUnsub(); };
+    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
   }, [user, isAdmin]);
 
   const handleAuth = async (e) => {
@@ -229,7 +187,7 @@ export default function App() {
     try {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const init = { name: formData.name, email: formData.email, subscriptionLevel: 0, joinDate: new Date().toISOString(), uid: cred.user.uid };
+        const init = { name: formData.name, email: formData.email, subscriptionLevel: 0, joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0 };
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         showToast("Registrasi Berhasil!");
@@ -237,15 +195,67 @@ export default function App() {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
         showToast("Selamat Datang!");
       }
-    } catch (err) { showToast("Gagal masuk/daftar. Periksa kembali data Anda.", "error"); }
+    } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
     setAuthLoading(false);
   };
 
+  // PROFILE & AFFILIATE ACTIONS
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), profileForm);
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), profileForm);
+      showToast("Profil berhasil diperbarui!");
+    } catch(err) { showToast("Gagal mengupdate profil", "error"); }
+  };
+
+  const handleSimulateCommission = async () => {
+    try {
+      const newBalance = affiliateBalance + 150000;
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: newBalance });
+      showToast("Berhasil mensimulasikan penjualan afiliasi (+Rp 150.000)");
+    } catch(e) { showToast("Gagal simulasi", "error"); }
+  };
+
+  const handleRequestWithdrawal = async () => {
+    if (!userData?.bank || !userData?.accountNo) return showToast("Lengkapi Nama Bank dan No Rekening di menu Profil terlebih dahulu!", "error");
+    if (affiliateBalance < 100000) return showToast("Minimal penarikan komisi adalah Rp 100.000", "error");
+    if (withdrawals.some(w => w.status === 'pending')) return showToast("Anda masih memiliki penarikan yang sedang diproses.", "error");
+
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
+        userId: user.uid, userName: userData.name, bank: userData.bank, accountNo: userData.accountNo, amount: affiliateBalance, status: 'pending', createdAt: new Date().toISOString()
+      });
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: 0 });
+      showToast("Permintaan penarikan berhasil dikirim!");
+    } catch(e) { showToast("Gagal request penarikan", "error"); }
+  };
+
+  const handleAdminWithdrawalAction = async (wdId, action, userId, amount) => {
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
+      if (action === 'rejected') {
+         // Kembalikan saldo jika ditolak
+         const userRef = doc(db, 'artifacts', appId, 'users', userId, 'profile', 'data');
+         // (Idealnya menggunakan transaction, disederhanakan untuk contoh)
+         let currentBal = 0;
+         const userRegistry = allUsers.find(u => u.uid === userId);
+         // Karena kita tidak membaca langsung profile, kita update aman menggunakan increment di server jika memungkinkan, 
+         // namun untuk kesederhanaan frontend kita berikan pesan agar admin update manual profil jika di reject.
+         showToast("Pencairan ditolak. Harap update saldo user secara manual.", "error");
+      } else {
+         showToast("Pencairan dana disetujui & ditandai selesai.");
+      }
+    } catch(e) { showToast("Gagal memproses", "error"); }
+  }
+
+  // TRANSACTION & PRODUCT ACTIONS
   const handlePurchaseRequest = async (pkg) => {
     try {
       const transId = `TRX-${Date.now()}`;
-      const transData = { id: transId, userId: user.uid, userName: userData.name, userEmail: user.email, packageLevel: pkg.level, packageName: pkg.name, price: pkg.price, status: 'pending', createdAt: new Date().toISOString() };
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), transData);
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), {
+        id: transId, userId: user.uid, userName: userData.name, userEmail: user.email, packageLevel: pkg.level, packageName: pkg.name, price: pkg.price, status: 'pending', createdAt: new Date().toISOString()
+      });
       const text = `Halo Admin, konfirmasi pembayaran.%0A%0A*INV: ${transId}*%0ANama: ${userData?.name}%0APaket: ${pkg.name}%0AHarga: Rp ${pkg.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
       window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
       setCheckoutPkg(null);
@@ -270,33 +280,22 @@ export default function App() {
     } catch (err) { showToast("Gagal memproses", "error"); }
   };
 
-  // FITUR TIKET BANTUAN
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!ticketForm.subject || !ticketForm.message) return;
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), {
-        userId: user.uid,
-        userName: userData.name,
-        subject: ticketForm.subject,
-        message: ticketForm.message,
-        status: 'open',
-        adminReply: '',
-        createdAt: new Date().toISOString()
+        userId: user.uid, userName: userData.name, subject: ticketForm.subject, message: ticketForm.message, status: 'open', adminReply: '', createdAt: new Date().toISOString()
       });
       setTicketForm({ subject: '', message: '' });
-      showToast("Tiket berhasil dikirim. Tim kami akan segera merespon.");
+      showToast("Tiket berhasil dikirim.");
     } catch (err) { showToast("Gagal mengirim tiket", "error"); }
   };
 
   const handleAdminReplyTicket = async (ticketId, replyText) => {
     if (!replyText) return;
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), {
-        status: 'answered',
-        adminReply: replyText,
-        updatedAt: new Date().toISOString()
-      });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: replyText, updatedAt: new Date().toISOString() });
       showToast("Balasan terkirim.");
     } catch (err) { showToast("Gagal membalas tiket", "error"); }
   };
@@ -316,7 +315,7 @@ export default function App() {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid));
         showToast('Data Registry Member Dihapus', 'error');
     } catch (err) { showToast('Gagal menghapus', 'error'); }
-  }
+  };
 
   const handleProductSubmit = async (e) => {
     e.preventDefault();
@@ -339,10 +338,7 @@ export default function App() {
     const msg = e.target.announce.value;
     if (!msg) return;
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), {
-        message: msg,
-        createdAt: new Date().toISOString()
-      });
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), { message: msg, createdAt: new Date().toISOString() });
       e.target.reset();
       showToast("Pengumuman Terkirim Keseluruh Member");
     } catch (err) { console.error(err); }
@@ -420,9 +416,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-['Plus_Jakarta_Sans'] flex text-slate-800 relative">
       
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 lg:hidden transition-opacity" onClick={()=>setSidebarOpen(false)}></div>
-      )}
+      {isSidebarOpen && <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 lg:hidden transition-opacity" onClick={()=>setSidebarOpen(false)}></div>}
 
       {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-[280px] bg-white border-r border-slate-200 flex flex-col transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}>
@@ -439,6 +433,7 @@ export default function App() {
               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Admin Center</p>
               <NavBtn active={activeTab==='admin_overview'} onClick={()=>{setActiveTab('admin_overview'); closeSidebarMobile();}} icon={<Activity size={20}/>} label="Overview" />
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
+              <NavBtn active={activeTab==='admin_wd'} onClick={()=>{setActiveTab('admin_wd'); closeSidebarMobile();}} icon={<Wallet size={20}/>} label="Pencairan Dana" count={adminStats.pendingWd} />
               <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
               <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member Realtime" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
@@ -451,11 +446,12 @@ export default function App() {
           <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="File Master" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
           <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={transactions.filter(t=>t.userId === user?.uid && t.status==='pending').length} />
+          <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20}/>} label="Program Afiliasi" />
           <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Pusat Bantuan" />
         </div>
 
         <div className="p-6 border-t border-slate-100 shrink-0">
-          <NavBtn active={activeTab==='profile'} onClick={()=>{setActiveTab('profile'); closeSidebarMobile();}} icon={<Settings size={20}/>} label="Pengaturan" />
+          <NavBtn active={activeTab==='profile'} onClick={()=>{setActiveTab('profile'); closeSidebarMobile();}} icon={<Settings size={20}/>} label="Pengaturan Profil" />
           <button onClick={()=>signOut(auth)} className="flex items-center gap-4 px-4 py-3.5 mt-2 rounded-2xl font-bold text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all w-full group">
             <LogOut size={20} className="group-hover:-translate-x-1 transition-transform"/><span>Keluar Akun</span>
           </button>
@@ -514,19 +510,19 @@ export default function App() {
                  <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden cursor-pointer hover:border-indigo-300 transition-colors" onClick={()=>setActiveTab('admin_users')}>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member Realtime</p>
                     <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{allUsers.length}</p>
-                    {filteredUsers.filter(u => (new Date() - new Date(u.joinDate)) < 86400000).length > 0 && (
-                      <span className="absolute top-6 right-6 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
-                    )}
-                 </div>
-                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Produk</p>
-                    <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{files.length}</p>
                  </div>
                  <div className="bg-amber-50 rounded-[2rem] p-8 border border-amber-200 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-amber-100 transition-colors" onClick={()=>setActiveTab('admin_trans')}>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Perlu Validasi</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Perlu Validasi Bayar</p>
                     <div className="flex items-center gap-3 mt-2">
                        <p className="text-4xl font-black text-amber-600 font-['Outfit']">{adminStats.pendingTrans}</p>
                        {adminStats.pendingTrans > 0 && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span></span>}
+                    </div>
+                 </div>
+                 <div className="bg-rose-50 rounded-[2rem] p-8 border border-rose-200 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-rose-100 transition-colors" onClick={()=>setActiveTab('admin_wd')}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-600">Request Pencairan</p>
+                    <div className="flex items-center gap-3 mt-2">
+                       <p className="text-4xl font-black text-rose-600 font-['Outfit']">{adminStats.pendingWd}</p>
+                       {adminStats.pendingWd > 0 && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span></span>}
                     </div>
                  </div>
                </div>
@@ -537,6 +533,49 @@ export default function App() {
                      <input name="announce" type="text" placeholder="Ketik pesan info baru..." className="flex-1 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm" />
                      <button type="submit" className="bg-slate-900 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> PUBLISH PENGUMUMAN</button>
                   </form>
+               </div>
+            </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: ADMIN WITHDRAWALS (PENCAIRAN DANA) */}
+          {/* ==================================================== */}
+          {activeTab === 'admin_wd' && isAdmin && (
+            <div className="animate-fadeIn space-y-6 sm:space-y-10">
+               <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Pencairan Dana Afiliasi</h2>
+               <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
+                  <div className="overflow-x-auto w-full custom-scrollbar">
+                    <table className="w-full text-left min-w-[800px]">
+                       <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          <tr><th className="px-6 sm:px-8 py-5">Afiliator</th><th className="px-6 sm:px-8 py-5">Data Rekening Tujuan</th><th className="px-6 sm:px-8 py-5">Nominal Tarik</th><th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin</th></tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-50">
+                          {withdrawals.filter(w => w.status === 'pending').length === 0 ? (
+                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">Tidak ada request penarikan komisi saat ini.</td></tr>
+                          ) : (
+                            withdrawals.filter(w => w.status === 'pending').map(w => (
+                              <tr key={w.id} className="hover:bg-slate-50 transition-all">
+                                 <td className="px-6 sm:px-8 py-6">
+                                    <p className="font-black text-slate-900 text-sm">{w.userName}</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">{new Date(w.createdAt).toLocaleString('id-ID')}</p>
+                                 </td>
+                                 <td className="px-6 sm:px-8 py-6">
+                                    <p className="font-black text-indigo-600 text-sm">{w.bank}</p>
+                                    <p className="font-mono text-slate-700 font-bold text-xs mt-0.5">{w.accountNo}</p>
+                                 </td>
+                                 <td className="px-6 sm:px-8 py-6 font-black text-slate-900 text-base">Rp {w.amount.toLocaleString('id-ID')}</td>
+                                 <td className="px-6 sm:px-8 py-6 text-center">
+                                      <div className="flex justify-center gap-2">
+                                        <button onClick={()=>handleAdminWithdrawalAction(w.id, 'approved', w.userId, w.amount)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-emerald-200 transition-all flex items-center gap-1"><CheckCircle size={14}/> SUDAH DITRANSFER</button>
+                                        <button onClick={()=>handleAdminWithdrawalAction(w.id, 'rejected', w.userId, w.amount)} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1"><XCircle size={14}/> TOLAK</button>
+                                      </div>
+                                 </td>
+                              </tr>
+                            ))
+                          )}
+                       </tbody>
+                    </table>
+                  </div>
                </div>
             </div>
           )}
@@ -589,13 +628,13 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
                 <StatCard label="Total Produk Buka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
-                <StatCard label="Terdaftar Sejak" val={userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID', {month:'short', year:'numeric'}) : '-'} icon={<Clock size={28}/>} color="amber" />
+                <StatCard label="Saldo Afiliasi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
               </div>
             </div>
           )}
 
           {/* ==================================================== */}
-          {/* TAB: FILES (CATALOG) */}
+          {/* TAB: FILES (CATALOG & REVIEWS) */}
           {/* ==================================================== */}
           {activeTab === 'files' && (
              <div className="animate-fadeIn space-y-6 sm:space-y-10">
@@ -618,7 +657,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
-                     {filteredFiles.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} />)}
+                     {filteredFiles.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} onReview={() => showToast("Fitur ulasan sedang dalam pengembangan UI.", "success")} />)}
                   </div>
                 )}
              </div>
@@ -717,6 +756,65 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
+          {/* TAB: AFFILIATE (USER VIEW) */}
+          {/* ==================================================== */}
+          {activeTab === 'affiliate' && !isAdmin && (
+             <div className="animate-fadeIn space-y-8 sm:space-y-10">
+                <div>
+                  <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Program Afiliasi</h2>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Sebarkan link Anda dan dapatkan komisi 20% dari setiap penjualan.</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className="bg-indigo-600 rounded-[2rem] p-8 sm:p-10 text-white relative overflow-hidden shadow-xl shadow-indigo-200 flex flex-col justify-center">
+                      <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 relative z-10">Saldo Komisi Aktif</p>
+                      <p className="text-4xl sm:text-5xl font-black mt-2 font-['Outfit'] relative z-10">Rp {affiliateBalance.toLocaleString('id-ID')}</p>
+                      <button onClick={handleRequestWithdrawal} className="mt-6 bg-white text-indigo-600 px-6 py-4 rounded-xl font-black text-sm hover:scale-105 transition-transform w-max shadow-lg">TARIK SALDO KE REKENING</button>
+                   </div>
+                   <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center relative">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Link Referral Anda</p>
+                      <div className="flex bg-slate-50 border border-slate-200 rounded-xl p-2 items-center">
+                         <input type="text" readOnly value={`https://domainanda.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-600 px-3 truncate" />
+                         <button onClick={()=>copyToClipboard(`https://domainanda.com/?ref=${user?.uid}`)} className="bg-indigo-100 text-indigo-600 p-3 rounded-lg hover:bg-indigo-200 transition-colors"><Copy size={16}/></button>
+                      </div>
+                      <div className="mt-6 p-4 bg-amber-50 border border-amber-100 rounded-xl">
+                         <p className="text-xs font-bold text-amber-800 leading-relaxed">Penting: Lengkapi profil Anda (Nomor WA dan Data Rekening Bank) sebelum melakukan penarikan komisi. Penarikan diproses maks 2x24 jam.</p>
+                      </div>
+                      {/* Tombol Simulasi Khusus Demo/Testing */}
+                      <button onClick={handleSimulateCommission} className="mt-4 text-[10px] font-black text-slate-400 underline hover:text-indigo-600 w-max mx-auto md:mx-0">(Dev: Klik Simulasi Tambah Saldo Rp 150k)</button>
+                   </div>
+                </div>
+
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                   <div className="p-6 border-b border-slate-100"><h4 className="font-black text-slate-800">Riwayat Penarikan</h4></div>
+                   <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                         <tr><th className="px-6 py-4">Waktu</th><th className="px-6 py-4">Nominal</th><th className="px-6 py-4">Status</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 font-bold text-slate-700">
+                         {withdrawals.length === 0 ? (
+                            <tr><td colSpan="3" className="px-6 py-10 text-center text-slate-400 font-normal">Belum ada riwayat penarikan dana.</td></tr>
+                         ) : (
+                            withdrawals.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
+                              <tr key={w.id}>
+                                <td className="px-6 py-4">{new Date(w.createdAt).toLocaleDateString('id-ID')}</td>
+                                <td className="px-6 py-4 text-indigo-600">Rp {w.amount.toLocaleString('id-ID')}</td>
+                                <td className="px-6 py-4">
+                                  <span className={`px-3 py-1 rounded-full text-[9px] uppercase tracking-widest ${w.status==='pending' ? 'bg-amber-100 text-amber-600' : w.status==='rejected' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                    {w.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                         )}
+                      </tbody>
+                   </table>
+                </div>
+             </div>
+          )}
+
+          {/* ==================================================== */}
           {/* TAB: SUPPORT HELPDESK (USER VIEW) */}
           {/* ==================================================== */}
           {activeTab === 'support' && !isAdmin && (
@@ -786,7 +884,6 @@ export default function App() {
                </div>
                
                <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl relative">
-                  {/* Indikator Realtime Header */}
                   <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center text-xs font-bold text-slate-500">
                      <span className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div> Live Sync Active</span>
                      <span>Total Record: {filteredUsers.length}</span>
@@ -892,51 +989,10 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN - MANAGE SUPPORT TICKETS */}
-          {/* ==================================================== */}
-          {activeTab === 'admin_support' && isAdmin && (
-             <div className="animate-fadeIn space-y-6 sm:space-y-10">
-                <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Support Helpdesk</h2>
-                <div className="space-y-6">
-                   {tickets.length === 0 ? (
-                     <div className="py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
-                        <p className="text-slate-400 font-bold">Tidak ada tiket bantuan yang masuk.</p>
-                     </div>
-                   ) : (
-                     tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
-                        <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm relative">
-                           {t.status === 'open' && <div className="absolute top-4 right-4 bg-amber-500 w-3 h-3 rounded-full animate-pulse"></div>}
-                           <p className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-1">{t.userName} <span className="text-slate-400 font-normal">({t.userId})</span></p>
-                           <h4 className="font-black text-xl text-slate-900 mb-2">{t.subject}</h4>
-                           <p className="text-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100">{t.message}</p>
-                           
-                           {t.status === 'open' ? (
-                             <form onSubmit={(e) => {
-                                e.preventDefault();
-                                handleAdminReplyTicket(t.id, e.target.reply.value);
-                             }} className="mt-4 flex gap-3">
-                                <input name="reply" type="text" placeholder="Tulis balasan untuk member..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm" required />
-                                <button type="submit" className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-700 transition-all flex items-center gap-2"><MessageCircle size={16}/> BALAS & TUTUP</button>
-                             </form>
-                           ) : (
-                             <div className="mt-4">
-                               <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1"><CheckCircle size={12} className="inline"/> SUDAH DIJAWAB</p>
-                               <p className="text-sm font-bold text-slate-800">{t.adminReply}</p>
-                             </div>
-                           )}
-                        </div>
-                     ))
-                   )}
-                </div>
-             </div>
-          )}
-
-          {/* ==================================================== */}
           {/* TAB: ADMIN - MANAGE FILES */}
           {/* ==================================================== */}
           {activeTab === 'admin_files' && isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-10 animate-fadeIn">
-               {/* Form Section */}
                <div className="lg:col-span-1">
                   <form onSubmit={handleProductSubmit} className="bg-white p-6 sm:p-8 lg:p-10 rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 shadow-2xl space-y-6 lg:sticky lg:top-28">
                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 font-['Outfit'] tracking-tight">{editingId ? 'Edit Data Produk' : 'Post Produk Baru'}</h3>
@@ -970,7 +1026,6 @@ export default function App() {
                      </div>
                   </form>
                </div>
-               {/* List Section */}
                <div className="lg:col-span-2 space-y-4 sm:space-y-6">
                   {files.length === 0 && <p className="text-center py-10 text-slate-400 font-bold">Katalog masih kosong.</p>}
                   {files.map(f => (
@@ -996,12 +1051,12 @@ export default function App() {
             </div>
           )}
 
-          {/* ---------------------------------------------------- */}
-          {/* TAB: PROFILE */}
-          {/* ---------------------------------------------------- */}
+          {/* ==================================================== */}
+          {/* TAB: PROFILE (UPDATEABLE) */}
+          {/* ==================================================== */}
           {activeTab === 'profile' && (
             <div className="animate-fadeIn max-w-2xl mx-auto md:mx-0">
-               <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] mb-6 sm:mb-8 tracking-tight">Akun Saya</h2>
+               <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] mb-6 sm:mb-8 tracking-tight">Pengaturan Profil</h2>
                <div className="bg-white rounded-[2rem] sm:rounded-[3rem] border border-slate-200 p-8 sm:p-14 shadow-2xl space-y-8 sm:space-y-10 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-indigo-500 to-sky-400"></div>
                   <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 border-b border-slate-100 pb-8 sm:pb-10">
@@ -1009,19 +1064,38 @@ export default function App() {
                     <div className="text-center sm:text-left">
                        <h3 className="text-2xl sm:text-3xl font-black text-slate-900 leading-none mb-2">{userData?.name || 'Member'}</h3>
                        <p className="text-slate-500 font-bold text-sm sm:text-lg">{user?.email}</p>
-                       <div className="mt-4 inline-flex px-4 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100 items-center gap-2"><ShieldCheck size={14}/> Lisensi: {TIER_LEVELS[currentTier].name}</div>
+                       <p className="text-[10px] text-slate-400 font-mono mt-1">UID: {user?.uid}</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Member UID (Rahasia)</label>
-                        <div className="px-5 py-4 rounded-2xl bg-slate-50 border border-slate-100 font-mono text-slate-600 text-[10px] sm:text-xs truncate">{user?.uid}</div>
+                  
+                  <form onSubmit={handleUpdateProfile} className="space-y-6">
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nomor WhatsApp</label>
+                           <input type="text" placeholder="Cth: 08123456789" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700 text-sm transition-all" value={profileForm.phone} onChange={e=>setProfileForm({...profileForm, phone: e.target.value})} />
+                        </div>
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Terdaftar Pada</label>
+                           <input type="text" disabled className="w-full px-5 py-4 rounded-2xl bg-slate-100 border border-slate-200 text-slate-500 font-bold text-sm cursor-not-allowed" value={userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
+                        </div>
                      </div>
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Terdaftar Pada</label>
-                        <div className="px-5 py-4 rounded-2xl bg-slate-50 border border-slate-100 font-black text-slate-700 text-sm">{userData?.joinDate ? new Date(userData.joinDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}</div>
+                     
+                     <div className="pt-4 border-t border-slate-100">
+                        <h4 className="font-black text-slate-800 mb-4 flex items-center gap-2"><Banknote size={18} className="text-indigo-500"/> Rekening Pencairan Komisi Afiliasi</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                           <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nama Bank</label>
+                              <input type="text" placeholder="BCA / Mandiri / BNI" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700 text-sm transition-all" value={profileForm.bank} onChange={e=>setProfileForm({...profileForm, bank: e.target.value})} />
+                           </div>
+                           <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">No Rekening</label>
+                              <input type="text" placeholder="Nomor rekening Anda" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700 text-sm transition-all" value={profileForm.accountNo} onChange={e=>setProfileForm({...profileForm, accountNo: e.target.value})} />
+                           </div>
+                        </div>
                      </div>
-                  </div>
+                     
+                     <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] shadow-xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 mt-4 text-sm"><Save size={18}/> SIMPAN PERUBAHAN</button>
+                  </form>
                </div>
             </div>
           )}
@@ -1128,7 +1202,7 @@ function StatCard({ label, val, icon, color }) {
   );
 }
 
-function ProFileCard({ file, currentTier }) {
+function ProFileCard({ file, currentTier, onReview }) {
   const isAccessible = currentTier >= (file.reqLevel || 0);
   return (
     <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 ${isAccessible ? 'border-transparent hover:border-indigo-300 shadow-lg hover:shadow-2xl' : 'border-slate-100 opacity-75 bg-slate-50/50'} p-6 sm:p-8 transition-all duration-500 flex flex-col h-full group relative overflow-hidden`}>
@@ -1137,7 +1211,11 @@ function ProFileCard({ file, currentTier }) {
         <div className={`h-14 w-14 sm:h-16 sm:w-16 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? 'bg-indigo-50 text-indigo-600 group-hover:scale-110' : 'bg-slate-200 text-slate-400'}`}>
           {file.category === 'Ebook' ? <FileText size={24} className="sm:w-7 sm:h-7"/> : file.category === 'Video' ? <Video size={24} className="sm:w-7 sm:h-7"/> : <Box size={24} className="sm:w-7 sm:h-7"/>}
         </div>
-        {!isAccessible && (
+        {isAccessible ? (
+          <button onClick={onReview} className="text-[9px] font-black text-amber-500 hover:bg-amber-50 px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1 border border-amber-200 transition-colors">
+            <Star size={12} fill="currentColor"/> NILAI
+          </button>
+        ) : (
           <div className="bg-white text-rose-500 text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1.5 border border-rose-100 shadow-sm">
             <Lock size={12}/> TERKUNCI
           </div>
