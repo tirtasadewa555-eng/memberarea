@@ -201,26 +201,35 @@ export default function App() {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
         showToast("Selamat Datang!");
       }
-    } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
+    } catch (err) { 
+      console.error(err);
+      showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); 
+    }
     setAuthLoading(false);
   };
 
+  // PROFILE & AFFILIATE ACTIONS
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), profileForm);
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), profileForm);
       showToast("Profil berhasil diperbarui!");
-    } catch(err) { showToast("Gagal mengupdate profil", "error"); }
+    } catch(err) { 
+      console.error(err);
+      showToast("Gagal mengupdate profil", "error"); 
+    }
   };
 
-  // AFFILIATE
   const handleSimulateCommission = async () => {
     try {
       const newBalance = affiliateBalance + 150000;
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: newBalance });
       showToast("Berhasil mensimulasikan penjualan afiliasi (+Rp 150.000)");
-    } catch(e) { showToast("Gagal simulasi", "error"); }
+    } catch(e) { 
+      console.error(e);
+      showToast("Gagal simulasi", "error"); 
+    }
   };
 
   const handleRequestWithdrawal = async () => {
@@ -230,22 +239,34 @@ export default function App() {
 
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
-        userId: user.uid, userName: userData.name, bank: userData.bank, accountNo: userData.accountNo, amount: affiliateBalance, status: 'pending', createdAt: new Date().toISOString()
+        userId: user.uid, 
+        userName: userData?.name || user?.email || 'Member', 
+        bank: userData.bank, 
+        accountNo: userData.accountNo, 
+        amount: affiliateBalance, 
+        status: 'pending', 
+        createdAt: new Date().toISOString()
       });
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: 0 });
       showToast("Permintaan penarikan berhasil dikirim!");
-    } catch(e) { showToast("Gagal request penarikan", "error"); }
+    } catch(e) { 
+      console.error(e);
+      showToast("Gagal request penarikan", "error"); 
+    }
   };
 
   const handleAdminWithdrawalAction = async (wdId, action, userId, amount) => {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
       if (action === 'rejected') {
-         showToast("Pencairan ditolak. Harap kontak member jika diperlukan.", "error");
+         showToast("Pencairan ditolak. Harap update saldo user secara manual jika diperlukan.", "error");
       } else {
          showToast("Pencairan dana disetujui & ditandai selesai.");
       }
-    } catch(e) { showToast("Gagal memproses", "error"); }
+    } catch(e) { 
+      console.error(e);
+      showToast("Gagal memproses", "error"); 
+    }
   }
 
   // TRANSACTIONS (UPGRADE)
@@ -256,14 +277,31 @@ export default function App() {
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), {
-        id: transId, userId: user.uid, userName: userData.name, userEmail: user.email, packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, price: checkoutPkg.price, senderName: confirmForm.senderName, senderBank: confirmForm.senderBank, notes: confirmForm.notes, status: 'pending', createdAt: new Date().toISOString()
+        id: transId, 
+        userId: user.uid, 
+        userName: userData?.name || user?.email || 'Member', 
+        userEmail: user.email, 
+        packageLevel: checkoutPkg.level, 
+        packageName: checkoutPkg.name, 
+        price: checkoutPkg.price, 
+        senderName: confirmForm.senderName, 
+        senderBank: confirmForm.senderBank, 
+        notes: confirmForm.notes, 
+        status: 'pending', 
+        createdAt: new Date().toISOString()
       });
+      
+      const text = `Halo Admin, konfirmasi pembayaran.%0A%0A*INV: ${transId}*%0ANama: ${userData?.name || 'Member'}%0APaket: ${checkoutPkg.name}%0AHarga: Rp ${checkoutPkg.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
+      window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
       
       setCheckoutPkg(null);
       setConfirmForm({ senderName: '', senderBank: '', notes: '' });
       showToast("Konfirmasi terkirim! Admin akan segera memvalidasi.");
       setActiveTab('transactions');
-    } catch (err) { showToast("Gagal mengirim konfirmasi", "error"); }
+    } catch (err) { 
+      console.error(err);
+      showToast("Gagal mengirim konfirmasi", "error"); 
+    }
   };
 
   const handleTransactionAction = async (trans, action) => {
@@ -279,20 +317,32 @@ export default function App() {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
           showToast("Pembayaran Ditolak.", "error");
       }
-    } catch (err) { showToast("Gagal memproses", "error"); }
+    } catch (err) { 
+      console.error(err);
+      showToast("Gagal memproses transaksi", "error"); 
+    }
   };
 
-  // TICKETS (HELPDESK)
+  // TICKETS (HELPDESK) - DI PERBAIKI AGAR ANTI CRASH
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!ticketForm.subject || !ticketForm.message) return;
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), {
-        userId: user.uid, userName: userData.name, subject: ticketForm.subject, message: ticketForm.message, status: 'open', adminReply: '', createdAt: new Date().toISOString()
+        userId: user.uid, 
+        userName: userData?.name || user?.email || 'Member', 
+        subject: ticketForm.subject, 
+        message: ticketForm.message, 
+        status: 'open', 
+        adminReply: '', 
+        createdAt: new Date().toISOString()
       });
       setTicketForm({ subject: '', message: '' });
       showToast("Tiket berhasil dikirim. Tim kami akan merespon.");
-    } catch (err) { showToast("Gagal mengirim tiket", "error"); }
+    } catch (err) { 
+      console.error("Error creating ticket:", err);
+      showToast("Gagal mengirim tiket", "error"); 
+    }
   };
 
   const handleAdminReplyTicket = async (ticketId, replyText) => {
@@ -300,7 +350,10 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: replyText, updatedAt: new Date().toISOString() });
       showToast("Balasan terkirim.");
-    } catch (err) { showToast("Gagal membalas tiket", "error"); }
+    } catch (err) { 
+      console.error(err);
+      showToast("Gagal membalas tiket", "error"); 
+    }
   };
 
   const handleProductSubmit = async (e) => {
@@ -316,7 +369,10 @@ export default function App() {
       }
       setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
       setEditingId(null);
-    } catch (err) { showToast("Gagal menyimpan", "error"); }
+    } catch (err) { 
+      console.error(err);
+      showToast("Gagal menyimpan", "error"); 
+    }
   };
 
   const updateMemberTier = async (uid, level) => {
@@ -325,7 +381,10 @@ export default function App() {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { subscriptionLevel: level });
       await updateDoc(doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data'), { subscriptionLevel: level });
       showToast('Status member diperbarui secara realtime.');
-    } catch (err) { showToast('Akses ditolak', 'error'); }
+    } catch (err) { 
+      console.error(err);
+      showToast('Akses ditolak', 'error'); 
+    }
   };
 
   const deleteMemberData = async (uid) => {
@@ -333,7 +392,10 @@ export default function App() {
     try {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid));
         showToast('Data Registry Member Dihapus', 'error');
-    } catch (err) { showToast('Gagal menghapus', 'error'); }
+    } catch (err) { 
+        console.error(err);
+        showToast('Gagal menghapus', 'error'); 
+    }
   };
 
   const handlePostAnnouncement = async (e) => {
@@ -438,7 +500,7 @@ export default function App() {
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
               <NavBtn active={activeTab==='admin_wd'} onClick={()=>{setActiveTab('admin_wd'); closeSidebarMobile();}} icon={<Wallet size={20}/>} label="Pencairan Dana" count={adminStats.pendingWd} />
               <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
-              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member" />
+              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member Realtime" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
               <div className="my-6 border-b border-slate-100"></div>
             </>
@@ -448,7 +510,7 @@ export default function App() {
           <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20}/>} label="Dashboard" />
           <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="File Master" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
-          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={transactions.filter(t=>t.userId === user?.uid && t.status==='pending').length} />
+          <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
           <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20}/>} label="Program Afiliasi" />
           <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Pusat Bantuan" />
         </div>
@@ -475,11 +537,11 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-black text-slate-900 leading-tight">{userData?.name || 'Member'}</p>
+              <p className="text-sm font-black text-slate-900 leading-tight">{userData?.name || user?.email?.split('@')[0] || 'Member'}</p>
               <p className={`text-[10px] font-black uppercase tracking-widest ${isAdmin ? 'text-indigo-600' : TIER_LEVELS[currentTier].color}`}>{isAdmin ? 'Super Admin' : TIER_LEVELS[currentTier].name}</p>
             </div>
             <div className="h-10 w-10 sm:h-12 sm:w-12 bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white rounded-2xl sm:rounded-full flex items-center justify-center font-black text-sm sm:text-base shadow-lg shadow-indigo-200 cursor-pointer hover:scale-105 transition-transform" onClick={()=>setActiveTab('profile')}>
-              {userData?.name?.charAt(0).toUpperCase() || 'U'}
+              {userData?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
             </div>
           </div>
         </header>
@@ -553,10 +615,10 @@ export default function App() {
                           <tr><th className="px-6 sm:px-8 py-5">Afiliator</th><th className="px-6 sm:px-8 py-5">Data Rekening Tujuan</th><th className="px-6 sm:px-8 py-5">Nominal Tarik</th><th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin</th></tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {withdrawals.filter(w => w.status === 'pending').length === 0 ? (
+                          {[...withdrawals].filter(w => w.status === 'pending').length === 0 ? (
                             <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">Tidak ada request penarikan komisi saat ini.</td></tr>
                           ) : (
-                            withdrawals.filter(w => w.status === 'pending').map(w => (
+                            [...withdrawals].filter(w => w.status === 'pending').map(w => (
                               <tr key={w.id} className="hover:bg-slate-50 transition-all">
                                  <td className="px-6 sm:px-8 py-6">
                                     <p className="font-black text-slate-900 text-sm">{w.userName}</p>
@@ -606,7 +668,7 @@ export default function App() {
                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Dashboard {TIER_LEVELS[currentTier].name}</span>
                     </div>
-                    <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] tracking-tight leading-[1.1]">Hai, {userData?.name?.split(' ')[0]}! 👋</h2>
+                    <h2 className="text-3xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] tracking-tight leading-[1.1]">Hai, {userData?.name?.split(' ')[0] || user?.email?.split('@')[0]}! 👋</h2>
                     <p className="text-slate-400 text-base sm:text-lg lg:text-xl max-w-xl mx-auto lg:mx-0 leading-relaxed">Kelola bisnis digital Anda. Akses semua file master, panduan, dan lisensi eksklusif di Pustaka Produk.</p>
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
                        <button onClick={()=>setActiveTab('files')} className="w-full sm:w-auto bg-white text-slate-900 px-8 py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] font-black shadow-xl hover:scale-105 transition-all text-sm sm:text-base">LIHAT FILE SAYA</button>
@@ -681,7 +743,7 @@ export default function App() {
                   {[1, 2, 3].map(lv => {
                     const isActive = currentTier === lv;
                     const isPassed = currentTier > lv;
-                    const isPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
+                    const isPending = [...transactions].some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
                     const isDisabled = isActive || isPassed || isPending;
 
                     return (
@@ -726,7 +788,7 @@ export default function App() {
                  </div>
                ) : (
                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
-                    {transactions.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                    {[...transactions].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
                       <div key={t.id} className={`bg-white p-6 sm:p-8 rounded-[2rem] border-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm transition-all ${t.status === 'pending' ? 'border-amber-200' : 'border-slate-100 hover:shadow-lg'}`}>
                          <div className="flex items-center gap-4 sm:gap-6 w-full md:w-auto">
                             <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : t.status === 'rejected' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
@@ -746,9 +808,9 @@ export default function App() {
                                </p>
                             </div>
                             {t.status === 'pending' && (
-                               <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
-                                 <MessageSquare size={16}/> INFO BUKTI KE WA
-                               </button>
+                              <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
+                                <MessageSquare size={16}/> INFO BUKTI KE WA
+                              </button>
                             )}
                          </div>
                       </div>
@@ -776,10 +838,10 @@ export default function App() {
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {transactions.filter(t => t.status==='pending').length === 0 ? (
+                          {[...transactions].filter(t => t.status==='pending').length === 0 ? (
                             <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">✅ Tidak ada pembayaran tertunda yang perlu divalidasi.</td></tr>
                           ) : (
-                            transactions.filter(t => t.status==='pending')
+                            [...transactions].filter(t => t.status==='pending')
                             .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))
                             .map(t => (
                               <tr key={t.id} className="hover:bg-slate-50 transition-all">
@@ -854,10 +916,10 @@ export default function App() {
                            <tr><th className="px-6 py-4">Waktu Request</th><th className="px-6 py-4">Nominal</th><th className="px-6 py-4">Status Transaksi</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50 font-bold text-slate-700">
-                           {withdrawals.length === 0 ? (
+                           {[...withdrawals].length === 0 ? (
                               <tr><td colSpan="3" className="px-6 py-10 text-center text-slate-400 font-normal">Belum ada riwayat penarikan dana.</td></tr>
                            ) : (
-                              withdrawals.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
+                              [...withdrawals].sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
                                 <tr key={w.id} className="hover:bg-slate-50">
                                   <td className="px-6 py-4">{new Date(w.createdAt).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
                                   <td className="px-6 py-4 text-indigo-600">Rp {w.amount.toLocaleString('id-ID')}</td>
@@ -902,10 +964,10 @@ export default function App() {
 
                <div className="space-y-6">
                   <h3 className="font-black text-slate-800 text-2xl font-['Outfit']">Status Tiket Anda</h3>
-                  {tickets.length === 0 ? (
+                  {[...tickets].length === 0 ? (
                     <div className="py-12 text-center bg-white rounded-[2rem] border border-slate-200"><p className="text-slate-400 font-bold">Belum ada riwayat tiket bantuan.</p></div>
                   ) : (
-                    tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
+                    [...tickets].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
                       <div key={ticket.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-slate-100 pb-4 mb-4 gap-3">
                             <div>
@@ -945,13 +1007,13 @@ export default function App() {
                 </div>
                 
                 <div className="space-y-6">
-                   {tickets.length === 0 ? (
+                   {[...tickets].length === 0 ? (
                      <div className="py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
                         <LifeBuoy size={48} className="text-slate-200 mx-auto mb-4"/>
                         <p className="text-slate-400 font-bold">Hebat! Tidak ada tiket bantuan yang terbuka.</p>
                      </div>
                    ) : (
-                     tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                     [...tickets].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
                         <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden">
                            {t.status === 'open' && <div className="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>}
                            <div className="flex justify-between items-start mb-4">
@@ -1063,6 +1125,7 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'admin_files' && isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-10 animate-fadeIn">
+               {/* Form Section */}
                <div className="lg:col-span-1">
                   <form onSubmit={handleProductSubmit} className="bg-white p-6 sm:p-8 lg:p-10 rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 shadow-2xl space-y-6 lg:sticky lg:top-28">
                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 font-['Outfit'] tracking-tight">{editingId ? 'Edit Data Produk' : 'Post Produk Baru'}</h3>
@@ -1096,6 +1159,7 @@ export default function App() {
                      </div>
                   </form>
                </div>
+               {/* List Section */}
                <div className="lg:col-span-2 space-y-4 sm:space-y-6">
                   {files.length === 0 && <p className="text-center py-10 text-slate-400 font-bold">Katalog masih kosong.</p>}
                   {files.map(f => (
@@ -1130,7 +1194,7 @@ export default function App() {
                <div className="bg-white rounded-[2rem] sm:rounded-[3rem] border border-slate-200 p-8 sm:p-14 shadow-2xl space-y-8 sm:space-y-10 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-indigo-500 to-sky-400"></div>
                   <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-10 border-b border-slate-100 pb-8 sm:pb-10">
-                    <div className="h-24 w-24 sm:h-28 sm:w-28 bg-gradient-to-tr from-indigo-600 to-indigo-400 rounded-[2rem] sm:rounded-[2.5rem] flex items-center justify-center text-4xl sm:text-5xl font-black text-white shadow-2xl shadow-indigo-200">{userData?.name?.charAt(0).toUpperCase()}</div>
+                    <div className="h-24 w-24 sm:h-28 sm:w-28 bg-gradient-to-tr from-indigo-600 to-indigo-400 rounded-[2rem] sm:rounded-[2.5rem] flex items-center justify-center text-4xl sm:text-5xl font-black text-white shadow-2xl shadow-indigo-200">{userData?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}</div>
                     <div className="text-center sm:text-left">
                        <h3 className="text-2xl sm:text-3xl font-black text-slate-900 leading-none mb-2">{userData?.name || 'Member'}</h3>
                        <p className="text-slate-500 font-bold text-sm sm:text-lg">{user?.email}</p>
