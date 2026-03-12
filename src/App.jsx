@@ -26,7 +26,7 @@ import {
   ShieldCheck, CreditCard, Settings, Menu, X, Bell, Trash2, Edit3, ChevronRight, 
   FileText, Video, Box, Lock, MessageSquare, Banknote, CheckCircle, Clock, 
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
-  MessageCircle, Network, Wallet, Copy, Save, Star
+  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt
 } from 'lucide-react';
 
 // ==========================================
@@ -42,8 +42,8 @@ const firebaseConfig = {
   measurementId: "G-RQBKYLD4K5"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v4-system';
-const ADMIN_EMAIL = "admin@website.com"; 
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v5-system';
+const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin
 const WHATSAPP_ADMIN = "628123456789"; 
 
 const TIER_LEVELS = {
@@ -54,8 +54,8 @@ const TIER_LEVELS = {
 };
 
 const BANK_ACCOUNTS = [
-  { bank: "BCA", number: "1234567890", owner: "PT DIGITAL SUKSES" },
-  { bank: "MANDIRI", number: "0987654321", owner: "ADMIN MEMBERSHIP" }
+  { bank: "BCA", number: "1234 5678 90", owner: "PT DIGITAL SUKSES" },
+  { bank: "MANDIRI", number: "0987 6543 21", owner: "ADMIN MEMBERSHIP" }
 ];
 
 let firebaseApp, auth, db;
@@ -95,8 +95,8 @@ export default function App() {
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
   const [productForm, setProductForm] = useState({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
   const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
+  const [confirmForm, setConfirmForm] = useState({ senderName: '', senderBank: '', notes: '' });
   
-  // Profile Editable State
   const [profileForm, setProfileForm] = useState({ phone: '', bank: '', accountNo: '' });
   const [editingId, setEditingId] = useState(null);
 
@@ -137,6 +137,9 @@ export default function App() {
     showToast("Link berhasil disalin!");
   };
 
+  // ==========================================
+  // REAL-TIME SYNC
+  // ==========================================
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
     const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } };
@@ -180,6 +183,9 @@ export default function App() {
     return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
   }, [user, isAdmin]);
 
+  // ==========================================
+  // ACTIONS
+  // ==========================================
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!isConfigReady) return showToast("Config Firebase belum diisi!", "error");
@@ -199,7 +205,6 @@ export default function App() {
     setAuthLoading(false);
   };
 
-  // PROFILE & AFFILIATE ACTIONS
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     try {
@@ -209,6 +214,7 @@ export default function App() {
     } catch(err) { showToast("Gagal mengupdate profil", "error"); }
   };
 
+  // AFFILIATE
   const handleSimulateCommission = async () => {
     try {
       const newBalance = affiliateBalance + 150000;
@@ -235,39 +241,35 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
       if (action === 'rejected') {
-         // Kembalikan saldo jika ditolak
-         const userRef = doc(db, 'artifacts', appId, 'users', userId, 'profile', 'data');
-         // (Idealnya menggunakan transaction, disederhanakan untuk contoh)
-         let currentBal = 0;
-         const userRegistry = allUsers.find(u => u.uid === userId);
-         // Karena kita tidak membaca langsung profile, kita update aman menggunakan increment di server jika memungkinkan, 
-         // namun untuk kesederhanaan frontend kita berikan pesan agar admin update manual profil jika di reject.
-         showToast("Pencairan ditolak. Harap update saldo user secara manual.", "error");
+         showToast("Pencairan ditolak. Harap kontak member jika diperlukan.", "error");
       } else {
          showToast("Pencairan dana disetujui & ditandai selesai.");
       }
     } catch(e) { showToast("Gagal memproses", "error"); }
   }
 
-  // TRANSACTION & PRODUCT ACTIONS
-  const handlePurchaseRequest = async (pkg) => {
+  // TRANSACTIONS (UPGRADE)
+  const handlePurchaseRequest = async (e) => {
+    e.preventDefault();
+    if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Harap lengkapi form konfirmasi!", "error");
+    
     try {
-      const transId = `TRX-${Date.now()}`;
+      const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), {
-        id: transId, userId: user.uid, userName: userData.name, userEmail: user.email, packageLevel: pkg.level, packageName: pkg.name, price: pkg.price, status: 'pending', createdAt: new Date().toISOString()
+        id: transId, userId: user.uid, userName: userData.name, userEmail: user.email, packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, price: checkoutPkg.price, senderName: confirmForm.senderName, senderBank: confirmForm.senderBank, notes: confirmForm.notes, status: 'pending', createdAt: new Date().toISOString()
       });
-      const text = `Halo Admin, konfirmasi pembayaran.%0A%0A*INV: ${transId}*%0ANama: ${userData?.name}%0APaket: ${pkg.name}%0AHarga: Rp ${pkg.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
-      window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
+      
       setCheckoutPkg(null);
-      showToast("Pesanan dibuat. Menunggu validasi admin.");
+      setConfirmForm({ senderName: '', senderBank: '', notes: '' });
+      showToast("Konfirmasi terkirim! Admin akan segera memvalidasi.");
       setActiveTab('transactions');
-    } catch (err) { showToast("Gagal membuat pesanan", "error"); }
+    } catch (err) { showToast("Gagal mengirim konfirmasi", "error"); }
   };
 
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
-          if(!window.confirm(`Yakin ingin menerima pembayaran dan UPGRADE INSTAN member ${trans.userName} ke paket ${trans.packageName}?`)) return;
+          if(!window.confirm(`Yakin ingin menerima pembayaran dari ${trans.senderName} dan UPGRADE INSTAN ke ${trans.packageName}?`)) return;
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
@@ -280,6 +282,7 @@ export default function App() {
     } catch (err) { showToast("Gagal memproses", "error"); }
   };
 
+  // TICKETS (HELPDESK)
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!ticketForm.subject || !ticketForm.message) return;
@@ -288,7 +291,7 @@ export default function App() {
         userId: user.uid, userName: userData.name, subject: ticketForm.subject, message: ticketForm.message, status: 'open', adminReply: '', createdAt: new Date().toISOString()
       });
       setTicketForm({ subject: '', message: '' });
-      showToast("Tiket berhasil dikirim.");
+      showToast("Tiket berhasil dikirim. Tim kami akan merespon.");
     } catch (err) { showToast("Gagal mengirim tiket", "error"); }
   };
 
@@ -298,6 +301,22 @@ export default function App() {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: replyText, updatedAt: new Date().toISOString() });
       showToast("Balasan terkirim.");
     } catch (err) { showToast("Gagal membalas tiket", "error"); }
+  };
+
+  const handleProductSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const data = { ...productForm, reqLevel: parseInt(productForm.reqLevel), updatedAt: serverTimestamp() };
+      if (editingId) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingId), data);
+        showToast("Produk diperbarui");
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() });
+        showToast("Produk ditambahkan");
+      }
+      setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
+      setEditingId(null);
+    } catch (err) { showToast("Gagal menyimpan", "error"); }
   };
 
   const updateMemberTier = async (uid, level) => {
@@ -315,22 +334,6 @@ export default function App() {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid));
         showToast('Data Registry Member Dihapus', 'error');
     } catch (err) { showToast('Gagal menghapus', 'error'); }
-  };
-
-  const handleProductSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const data = { ...productForm, reqLevel: parseInt(productForm.reqLevel), updatedAt: serverTimestamp() };
-      if (editingId) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingId), data);
-        showToast("Produk diperbarui");
-      } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() });
-        showToast("Produk ditambahkan");
-      }
-      setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
-      setEditingId(null);
-    } catch (err) { showToast("Gagal menyimpan", "error"); }
   };
 
   const handlePostAnnouncement = async (e) => {
@@ -435,7 +438,7 @@ export default function App() {
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
               <NavBtn active={activeTab==='admin_wd'} onClick={()=>{setActiveTab('admin_wd'); closeSidebarMobile();}} icon={<Wallet size={20}/>} label="Pencairan Dana" count={adminStats.pendingWd} />
               <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
-              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member Realtime" />
+              <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
               <div className="my-6 border-b border-slate-100"></div>
             </>
@@ -508,7 +511,7 @@ export default function App() {
                     <p className="text-3xl font-black mt-2 font-['Outfit'] relative z-10">Rp {adminStats.totalRev.toLocaleString('id-ID')}</p>
                  </div>
                  <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden cursor-pointer hover:border-indigo-300 transition-colors" onClick={()=>setActiveTab('admin_users')}>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member Realtime</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member Aktif</p>
                     <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{allUsers.length}</p>
                  </div>
                  <div className="bg-amber-50 rounded-[2rem] p-8 border border-amber-200 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-amber-100 transition-colors" onClick={()=>setActiveTab('admin_trans')}>
@@ -518,20 +521,20 @@ export default function App() {
                        {adminStats.pendingTrans > 0 && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span></span>}
                     </div>
                  </div>
-                 <div className="bg-rose-50 rounded-[2rem] p-8 border border-rose-200 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-rose-100 transition-colors" onClick={()=>setActiveTab('admin_wd')}>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-600">Request Pencairan</p>
+                 <div className="bg-rose-50 rounded-[2rem] p-8 border border-rose-200 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-rose-100 transition-colors" onClick={()=>setActiveTab('admin_support')}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-600">Tiket Bantuan (Open)</p>
                     <div className="flex items-center gap-3 mt-2">
-                       <p className="text-4xl font-black text-rose-600 font-['Outfit']">{adminStats.pendingWd}</p>
-                       {adminStats.pendingWd > 0 && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span></span>}
+                       <p className="text-4xl font-black text-rose-600 font-['Outfit']">{adminStats.openTickets}</p>
+                       {adminStats.openTickets > 0 && <span className="flex h-3 w-3 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span></span>}
                     </div>
                  </div>
                </div>
 
                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
-                  <h4 className="font-black uppercase tracking-widest text-xs text-slate-400 flex items-center gap-2"><Megaphone size={16}/> Kirim Pengumuman Global ke Member</h4>
+                  <h4 className="font-black uppercase tracking-widest text-xs text-slate-400 flex items-center gap-2"><Megaphone size={16}/> Kirim Pengumuman Global</h4>
                   <form onSubmit={handlePostAnnouncement} className="flex flex-col sm:flex-row gap-3">
                      <input name="announce" type="text" placeholder="Ketik pesan info baru..." className="flex-1 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm" />
-                     <button type="submit" className="bg-slate-900 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> PUBLISH PENGUMUMAN</button>
+                     <button type="submit" className="bg-slate-900 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 text-sm"><Plus size={18}/> BROADCAST</button>
                   </form>
                </div>
             </div>
@@ -566,7 +569,7 @@ export default function App() {
                                  <td className="px-6 sm:px-8 py-6 font-black text-slate-900 text-base">Rp {w.amount.toLocaleString('id-ID')}</td>
                                  <td className="px-6 sm:px-8 py-6 text-center">
                                       <div className="flex justify-center gap-2">
-                                        <button onClick={()=>handleAdminWithdrawalAction(w.id, 'approved', w.userId, w.amount)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-emerald-200 transition-all flex items-center gap-1"><CheckCircle size={14}/> SUDAH DITRANSFER</button>
+                                        <button onClick={()=>handleAdminWithdrawalAction(w.id, 'approved', w.userId, w.amount)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-emerald-200 transition-all flex items-center gap-1"><CheckCircle size={14}/> SUDAH TRANSFER</button>
                                         <button onClick={()=>handleAdminWithdrawalAction(w.id, 'rejected', w.userId, w.amount)} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1"><XCircle size={14}/> TOLAK</button>
                                       </div>
                                  </td>
@@ -589,7 +592,7 @@ export default function App() {
                 <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 p-5 rounded-3xl flex items-start sm:items-center gap-4">
                    <div className="bg-white p-3 rounded-2xl shadow-sm shrink-0"><Megaphone className="text-amber-500" size={24}/></div>
                    <div className="flex-1">
-                     <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Pesan dari Admin</p>
+                     <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Pengumuman Sistem</p>
                      <p className="text-amber-950 font-bold text-sm sm:text-base leading-relaxed">{announcements[announcements.length - 1].message}</p>
                    </div>
                 </div>
@@ -617,7 +620,7 @@ export default function App() {
                         <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent rounded-[2rem] sm:rounded-[3rem] pointer-events-none"></div>
                         <FolderLock size={48} className="text-indigo-400 sm:w-16 sm:h-16" />
                         <div className="text-center relative z-10">
-                           <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest">Akses File</p>
+                           <p className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest">Akses Produk</p>
                            <p className="text-3xl sm:text-4xl font-black text-white">{Math.round((files.filter(f=>currentTier>=f.reqLevel).length / (files.length || 1)) * 100)}%</p>
                         </div>
                      </div>
@@ -626,7 +629,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-                <StatCard label="Total Produk Buka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
+                <StatCard label="Total Produk Terbuka" val={`${files.filter(f=>currentTier>=f.reqLevel).length} File`} icon={<Box size={28}/>} color="indigo" />
                 <StatCard label="Tipe Lisensi" val={TIER_LEVELS[currentTier].name} icon={<ShieldCheck size={28}/>} color="emerald" />
                 <StatCard label="Saldo Afiliasi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28}/>} color="amber" />
               </div>
@@ -634,7 +637,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: FILES (CATALOG & REVIEWS) */}
+          {/* TAB: FILES (CATALOG) */}
           {/* ==================================================== */}
           {activeTab === 'files' && (
              <div className="animate-fadeIn space-y-6 sm:space-y-10">
@@ -657,7 +660,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
-                     {filteredFiles.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} onReview={() => showToast("Fitur ulasan sedang dalam pengembangan UI.", "success")} />)}
+                     {filteredFiles.map(f => <ProFileCard key={f.id} file={f} currentTier={currentTier} onReview={() => showToast("Fitur ulasan dalam pengembangan.", "success")} />)}
                   </div>
                 )}
              </div>
@@ -743,15 +746,72 @@ export default function App() {
                                </p>
                             </div>
                             {t.status === 'pending' && (
-                              <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
-                                <MessageSquare size={16}/> INFO BUKTI KE WA
-                              </button>
+                               <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-black text-[10px] sm:text-xs shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all shrink-0">
+                                 <MessageSquare size={16}/> INFO BUKTI KE WA
+                               </button>
                             )}
                          </div>
                       </div>
                     ))}
                  </div>
                )}
+            </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: ADMIN - TRANSACTIONS (VALIDASI) */}
+          {/* ==================================================== */}
+          {activeTab === 'admin_trans' && isAdmin && (
+            <div className="animate-fadeIn space-y-6 sm:space-y-10">
+               <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Validasi Konfirmasi Pembayaran</h2>
+               <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
+                  <div className="overflow-x-auto w-full custom-scrollbar">
+                    <table className="w-full text-left min-w-[900px]">
+                       <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          <tr>
+                            <th className="px-6 sm:px-8 py-5">Invoice & User</th>
+                            <th className="px-6 sm:px-8 py-5">Data Konfirmasi User</th>
+                            <th className="px-6 sm:px-8 py-5">Tagihan</th>
+                            <th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-50">
+                          {transactions.filter(t => t.status==='pending').length === 0 ? (
+                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">✅ Tidak ada pembayaran tertunda yang perlu divalidasi.</td></tr>
+                          ) : (
+                            transactions.filter(t => t.status==='pending')
+                            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))
+                            .map(t => (
+                              <tr key={t.id} className="hover:bg-slate-50 transition-all">
+                                 <td className="px-6 sm:px-8 py-6">
+                                    <p className="font-black text-slate-900 text-sm">{t.userName}</p>
+                                    <p className="text-[10px] text-slate-500 font-bold font-mono mt-1">{t.id}</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">{new Date(t.createdAt).toLocaleString('id-ID')}</p>
+                                 </td>
+                                 <td className="px-6 sm:px-8 py-6">
+                                    <div className="bg-slate-100 p-3 rounded-xl inline-block">
+                                       <p className="text-xs font-bold text-slate-800"><span className="text-slate-400">Pengirim:</span> {t.senderName || '-'}</p>
+                                       <p className="text-xs font-bold text-slate-800 mt-1"><span className="text-slate-400">Bank:</span> {t.senderBank || '-'}</p>
+                                       {t.notes && <p className="text-[10px] italic text-slate-500 mt-1">"{t.notes}"</p>}
+                                    </div>
+                                 </td>
+                                 <td className="px-6 sm:px-8 py-6 font-black text-indigo-600 text-sm sm:text-base">
+                                    Rp {t.price.toLocaleString('id-ID')}
+                                    <span className="block text-[10px] text-slate-400 mt-1 font-sans">{t.packageName}</span>
+                                 </td>
+                                 <td className="px-6 sm:px-8 py-6 text-center">
+                                      <div className="flex justify-center gap-2">
+                                        <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-emerald-200 hover:-translate-y-1 transition-all flex items-center gap-1"><CheckCircle size={14}/> TERIMA & UPGRADE</button>
+                                        <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1" title="Tolak jika bukti palsu"><XCircle size={14}/> TOLAK</button>
+                                      </div>
+                                 </td>
+                              </tr>
+                            ))
+                          )}
+                       </tbody>
+                    </table>
+                  </div>
+               </div>
             </div>
           )}
 
@@ -787,29 +847,31 @@ export default function App() {
                 </div>
 
                 <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                   <div className="p-6 border-b border-slate-100"><h4 className="font-black text-slate-800">Riwayat Penarikan</h4></div>
-                   <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                         <tr><th className="px-6 py-4">Waktu</th><th className="px-6 py-4">Nominal</th><th className="px-6 py-4">Status</th></tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50 font-bold text-slate-700">
-                         {withdrawals.length === 0 ? (
-                            <tr><td colSpan="3" className="px-6 py-10 text-center text-slate-400 font-normal">Belum ada riwayat penarikan dana.</td></tr>
-                         ) : (
-                            withdrawals.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
-                              <tr key={w.id}>
-                                <td className="px-6 py-4">{new Date(w.createdAt).toLocaleDateString('id-ID')}</td>
-                                <td className="px-6 py-4 text-indigo-600">Rp {w.amount.toLocaleString('id-ID')}</td>
-                                <td className="px-6 py-4">
-                                  <span className={`px-3 py-1 rounded-full text-[9px] uppercase tracking-widest ${w.status==='pending' ? 'bg-amber-100 text-amber-600' : w.status==='rejected' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                    {w.status}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                         )}
-                      </tbody>
-                   </table>
+                   <div className="p-6 border-b border-slate-100"><h4 className="font-black text-slate-800">Riwayat Penarikan Saldo</h4></div>
+                   <div className="overflow-x-auto">
+                     <table className="w-full text-left text-sm min-w-[500px]">
+                        <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                           <tr><th className="px-6 py-4">Waktu Request</th><th className="px-6 py-4">Nominal</th><th className="px-6 py-4">Status Transaksi</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 font-bold text-slate-700">
+                           {withdrawals.length === 0 ? (
+                              <tr><td colSpan="3" className="px-6 py-10 text-center text-slate-400 font-normal">Belum ada riwayat penarikan dana.</td></tr>
+                           ) : (
+                              withdrawals.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
+                                <tr key={w.id} className="hover:bg-slate-50">
+                                  <td className="px-6 py-4">{new Date(w.createdAt).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+                                  <td className="px-6 py-4 text-indigo-600">Rp {w.amount.toLocaleString('id-ID')}</td>
+                                  <td className="px-6 py-4">
+                                    <span className={`px-3 py-1.5 rounded-full text-[9px] uppercase tracking-widest ${w.status==='pending' ? 'bg-amber-100 text-amber-600' : w.status==='rejected' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                      {w.status === 'pending' ? 'Menunggu Transfer' : w.status === 'rejected' ? 'Ditolak' : 'Selesai'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                           )}
+                        </tbody>
+                     </table>
+                   </div>
                 </div>
              </div>
           )}
@@ -821,43 +883,48 @@ export default function App() {
             <div className="animate-fadeIn space-y-8 sm:space-y-10">
                <div>
                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Pusat Bantuan</h2>
-                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Kirimkan pertanyaan atau kendala Anda di sini, tim kami akan merespon.</p>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Kirimkan pertanyaan atau kendala Anda di sini. Tim teknis kami akan merespon tiket Anda.</p>
                </div>
                
-               <form onSubmit={handleCreateTicket} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+               <form onSubmit={handleCreateTicket} className="bg-white p-6 sm:p-10 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-indigo-600"></div>
+                  <h3 className="font-black text-xl text-slate-800">Buat Tiket Baru</h3>
                   <div className="space-y-2">
-                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Subjek Masalah</label>
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Subjek / Topik</label>
                      <input type="text" placeholder="Misal: Link download error" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} required />
                   </div>
                   <div className="space-y-2">
-                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detail Kendala</label>
-                     <textarea placeholder="Jelaskan kendala Anda..." rows="4" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm resize-none" value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} required></textarea>
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detail Pesan</label>
+                     <textarea placeholder="Jelaskan kendala Anda secara detail..." rows="4" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm resize-none" value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} required></textarea>
                   </div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">KIRIM TIKET BANTUAN</button>
+                  <button type="submit" className="bg-indigo-600 text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2 text-sm"><Send size={18}/> KIRIM TIKET</button>
                </form>
 
-               <div className="space-y-4">
-                  <h3 className="font-black text-slate-800 text-xl">Riwayat Tiket Anda</h3>
+               <div className="space-y-6">
+                  <h3 className="font-black text-slate-800 text-2xl font-['Outfit']">Status Tiket Anda</h3>
                   {tickets.length === 0 ? (
-                    <div className="py-10 text-center bg-white rounded-[2rem] border border-slate-200"><p className="text-slate-400 font-bold">Belum ada tiket yang dibuat.</p></div>
+                    <div className="py-12 text-center bg-white rounded-[2rem] border border-slate-200"><p className="text-slate-400 font-bold">Belum ada riwayat tiket bantuan.</p></div>
                   ) : (
                     tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
-                      <div key={ticket.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                         <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4">
+                      <div key={ticket.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-slate-100 pb-4 mb-4 gap-3">
                             <div>
-                              <h4 className="font-black text-slate-800">{ticket.subject}</h4>
-                              <p className="text-xs text-slate-400 mt-1">{new Date(ticket.createdAt).toLocaleString('id-ID')}</p>
+                              <h4 className="font-black text-lg text-slate-800 leading-tight">{ticket.subject}</h4>
+                              <p className="text-xs text-slate-400 mt-1 font-medium">{new Date(ticket.createdAt).toLocaleString('id-ID', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</p>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${ticket.status === 'open' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                              {ticket.status === 'open' ? 'MENUNGGU BALASAN' : 'DIJAWAB'}
+                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-max ${ticket.status === 'open' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                              {ticket.status === 'open' ? 'MENUNGGU BALASAN' : 'TELAH DIJAWAB'}
                             </span>
                          </div>
-                         <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl mb-4">{ticket.message}</p>
+                         <p className="text-sm text-slate-600 leading-relaxed p-4 bg-slate-50 border border-slate-100 rounded-2xl mb-4 relative">
+                            <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-slate-400">Pesan Anda:</span>
+                            {ticket.message}
+                         </p>
                          
                          {ticket.adminReply && (
-                           <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mt-4">
-                              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center gap-1"><ShieldCheck size={14}/> BALASAN ADMIN</p>
-                              <p className="text-sm font-bold text-slate-800">{ticket.adminReply}</p>
+                           <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-2xl relative mt-6">
+                              <div className="absolute -top-4 left-4 bg-indigo-600 text-white px-3 py-1 rounded-full text-[10px] font-black tracking-widest flex items-center gap-1 shadow-md"><ShieldCheck size={12}/> CS SUPPORT</div>
+                              <p className="text-sm font-bold text-indigo-900 leading-relaxed pt-2">{ticket.adminReply}</p>
                            </div>
                          )}
                       </div>
@@ -865,6 +932,56 @@ export default function App() {
                   )}
                </div>
             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: ADMIN - MANAGE SUPPORT TICKETS */}
+          {/* ==================================================== */}
+          {activeTab === 'admin_support' && isAdmin && (
+             <div className="animate-fadeIn space-y-6 sm:space-y-10">
+                <div>
+                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Support Helpdesk Admin</h2>
+                   <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Jawab keluhan dan pertanyaan member di sini.</p>
+                </div>
+                
+                <div className="space-y-6">
+                   {tickets.length === 0 ? (
+                     <div className="py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
+                        <LifeBuoy size={48} className="text-slate-200 mx-auto mb-4"/>
+                        <p className="text-slate-400 font-bold">Hebat! Tidak ada tiket bantuan yang terbuka.</p>
+                     </div>
+                   ) : (
+                     tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                        <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden">
+                           {t.status === 'open' && <div className="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>}
+                           <div className="flex justify-between items-start mb-4">
+                              <div>
+                                 <p className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-1 flex items-center gap-2"><UserCircle size={14}/> {t.userName} <span className="text-slate-400 font-normal">({t.userId})</span></p>
+                                 <h4 className="font-black text-xl text-slate-900">{t.subject}</h4>
+                              </div>
+                              <span className="text-xs font-bold text-slate-400">{new Date(t.createdAt).toLocaleDateString('id-ID')}</span>
+                           </div>
+                           <p className="text-sm text-slate-700 bg-slate-50 p-5 rounded-2xl border border-slate-100">{t.message}</p>
+                           
+                           {t.status === 'open' ? (
+                             <form onSubmit={(e) => {
+                                e.preventDefault();
+                                handleAdminReplyTicket(t.id, e.target.reply.value);
+                             }} className="mt-6 flex flex-col sm:flex-row gap-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                                <input name="reply" type="text" placeholder="Tulis solusi untuk member di sini..." className="flex-1 px-4 py-3 rounded-xl border border-indigo-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm bg-white" required />
+                                <button type="submit" className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[10px] sm:text-xs hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-md"><Send size={16}/> BALAS TIKET</button>
+                             </form>
+                           ) : (
+                             <div className="mt-4 bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
+                               <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1"><CheckCircle size={12} className="inline"/> ANDA TELAH MEMBALAS:</p>
+                               <p className="text-sm font-bold text-emerald-900">{t.adminReply}</p>
+                             </div>
+                           )}
+                        </div>
+                     ))
+                   )}
+                </div>
+             </div>
           )}
 
           {/* ==================================================== */}
@@ -935,53 +1052,6 @@ export default function App() {
                           })
                         )}
                       </tbody>
-                    </table>
-                  </div>
-               </div>
-            </div>
-          )}
-
-          {/* ==================================================== */}
-          {/* TAB: ADMIN - TRANSACTIONS */}
-          {/* ==================================================== */}
-          {activeTab === 'admin_trans' && isAdmin && (
-            <div className="animate-fadeIn space-y-6 sm:space-y-10">
-               <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Validasi Pembayaran</h2>
-               <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
-                  <div className="overflow-x-auto w-full custom-scrollbar">
-                    <table className="w-full text-left min-w-[800px]">
-                       <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          <tr><th className="px-6 sm:px-8 py-5">Invoice & Member</th><th className="px-6 sm:px-8 py-5">Tagihan</th><th className="px-6 sm:px-8 py-5">Status</th><th className="px-6 sm:px-8 py-5 text-center">Tindakan Admin</th></tr>
-                       </thead>
-                       <tbody className="divide-y divide-slate-50">
-                          {transactions.filter(t => t.status==='pending').length === 0 ? (
-                            <tr><td colSpan="4" className="px-8 py-20 text-center font-bold text-slate-400">✅ Tidak ada pembayaran tertunda yang perlu divalidasi.</td></tr>
-                          ) : (
-                            transactions.filter(t => t.status==='pending')
-                            .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))
-                            .map(t => (
-                              <tr key={t.id} className="hover:bg-slate-50 transition-all">
-                                 <td className="px-6 sm:px-8 py-6">
-                                    <p className="font-black text-slate-900 text-sm">{t.userName}</p>
-                                    <p className="text-[10px] text-slate-500 font-bold font-mono mt-1">{t.id}</p>
-                                    <p className="text-[10px] text-slate-400 mt-1">{new Date(t.createdAt).toLocaleString('id-ID')}</p>
-                                 </td>
-                                 <td className="px-6 sm:px-8 py-6 font-black text-indigo-600 text-sm sm:text-base">Rp {t.price.toLocaleString('id-ID')} <span className="block text-[10px] text-slate-400 mt-1 font-sans">{t.packageName}</span></td>
-                                 <td className="px-6 sm:px-8 py-6">
-                                   <span className="bg-amber-50 border border-amber-200 text-amber-600 px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center w-max gap-1">
-                                      <Clock size={12}/> PENDING
-                                   </span>
-                                 </td>
-                                 <td className="px-6 sm:px-8 py-6 text-center">
-                                      <div className="flex justify-center gap-2">
-                                        <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase shadow-lg shadow-emerald-200 hover:-translate-y-1 transition-all flex items-center gap-1"><CheckCircle size={14}/> TERIMA & UPGRADE</button>
-                                        <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white px-4 py-2.5 rounded-xl font-black text-[9px] sm:text-[10px] uppercase transition-all flex items-center gap-1" title="Tolak jika bukti palsu/tidak ada"><XCircle size={14}/> TOLAK</button>
-                                      </div>
-                                 </td>
-                              </tr>
-                            ))
-                          )}
-                       </tbody>
                     </table>
                   </div>
                </div>
@@ -1104,50 +1174,58 @@ export default function App() {
       </div>
 
       {/* ========================================== */}
-      {/* MODAL CHECKOUT */}
+      {/* MODAL CHECKOUT & KONFIRMASI INTERNAL */}
       {/* ========================================== */}
       {checkoutPkg && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-slate-900/70 animate-fadeIn">
-           <div className="max-w-2xl w-full bg-white rounded-[2rem] sm:rounded-[3rem] shadow-3xl overflow-y-auto max-h-[90vh] animate-slideUp border border-white/20 custom-scrollbar">
-              <div className="p-8 sm:p-14 space-y-8 sm:space-y-10">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-slate-900/80 animate-fadeIn overflow-y-auto">
+           <div className="max-w-2xl w-full bg-white rounded-[2rem] sm:rounded-[3rem] shadow-3xl my-auto animate-slideUp border border-white/20">
+              <div className="p-6 sm:p-12 space-y-6 sm:space-y-8">
                  <div className="flex justify-between items-start">
                     <div className="space-y-2">
-                      <h3 className="text-2xl sm:text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Instruksi Pembayaran</h3>
-                      <p className="text-slate-500 font-medium text-sm sm:text-base">Selesaikan transfer ke salah satu rekening resmi kami.</p>
+                      <h3 className="text-2xl sm:text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Checkout Paket</h3>
+                      <p className="text-slate-500 font-medium text-xs sm:text-sm">Langkah 1: Transfer ke salah satu rekening. Langkah 2: Isi form konfirmasi.</p>
                     </div>
                     <button onClick={()=>setCheckoutPkg(null)} className="p-2 sm:p-3 bg-slate-100 rounded-xl sm:rounded-2xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all shrink-0"><X size={20}/></button>
                  </div>
 
-                 <div className="bg-slate-900 rounded-[2rem] p-6 sm:p-8 text-white relative overflow-hidden shadow-xl">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 opacity-30 rounded-full blur-3xl pointer-events-none"></div>
-                    <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Total Tagihan Lunas</p>
-                          <p className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tighter">Rp {checkoutPkg.price.toLocaleString('id-ID')}</p>
-                       </div>
-                       <div className="text-left sm:text-right">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Upgrade Ke</p>
-                          <p className="text-lg sm:text-xl font-black text-amber-400">{checkoutPkg.name.toUpperCase()}</p>
-                       </div>
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                 {/* Rekening Tujuan */}
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {BANK_ACCOUNTS.map((b, i) => (
-                      <div key={i} className="p-6 sm:p-8 bg-slate-50 rounded-[1.5rem] border border-slate-200 flex flex-col items-center text-center space-y-2 sm:space-y-3 hover:border-indigo-300 transition-all">
-                         <p className="text-[10px] font-black uppercase text-indigo-600 tracking-[4px]">Bank {b.bank}</p>
+                      <div key={i} className="p-5 sm:p-6 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex flex-col items-center text-center">
+                         <p className="text-[10px] font-black uppercase text-indigo-500 tracking-[3px] mb-1">Bank {b.bank}</p>
                          <h4 className="text-xl sm:text-2xl font-black text-slate-900 font-mono tracking-tighter">{b.number}</h4>
-                         <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest">{b.owner}</p>
+                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{b.owner}</p>
                       </div>
                     ))}
                  </div>
 
-                 <div className="flex flex-col gap-3 sm:gap-4 pt-4 border-t border-slate-100">
-                    <button onClick={()=>handlePurchaseRequest(checkoutPkg)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 sm:py-5 rounded-2xl shadow-xl shadow-emerald-200 transition-all flex items-center justify-center gap-3 text-sm sm:text-base">
-                       <MessageSquare size={20}/> SAYA SUDAH TRANSFER (KONFIRMASI WA)
-                    </button>
-                    <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed px-4">Sistem akan mencatat pesanan Anda. Admin akan mengaktifkan paket maks 1x24 jam setelah bukti diterima.</p>
+                 {/* Total Tagihan */}
+                 <div className="bg-slate-900 rounded-[1.5rem] p-6 text-white relative overflow-hidden shadow-xl flex justify-between items-center">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 opacity-30 rounded-full blur-3xl pointer-events-none"></div>
+                    <div className="relative z-10">
+                       <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Total Bayar Lunas</p>
+                       <p className="text-2xl sm:text-4xl font-black font-['Outfit'] tracking-tighter">Rp {checkoutPkg.price.toLocaleString('id-ID')}</p>
+                    </div>
+                    <div className="text-right relative z-10">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Upgrade</p>
+                       <p className="text-base sm:text-xl font-black text-amber-400">{checkoutPkg.name}</p>
+                    </div>
                  </div>
+
+                 {/* Form Konfirmasi Internal */}
+                 <form onSubmit={handlePurchaseRequest} className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-200 space-y-4">
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-2 flex items-center gap-2"><Receipt size={16} className="text-indigo-600"/> Form Konfirmasi Transfer</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                       <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
+                       <input type="text" placeholder="Bank Asal (Misal: BCA)" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
+                    </div>
+                    <input type="text" placeholder="Catatan / Link Bukti TF (Opsional)" value={confirmForm.notes} onChange={e=>setConfirmForm({...confirmForm, notes: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm" />
+                    
+                    <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2 text-sm mt-2">
+                       <MessageSquare size={18}/> KLIK UNTUK KONFIRMASI PEMBAYARAN
+                    </button>
+                    <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 leading-relaxed">Admin akan memvalidasi pembayaran Anda melalui sistem dalam waktu 1x24 jam.</p>
+                 </form>
               </div>
            </div>
         </div>
