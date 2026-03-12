@@ -19,7 +19,6 @@ import {
   addDoc, 
   serverTimestamp,
   query,
-  orderBy,
   where
 } from 'firebase/firestore';
 import { 
@@ -53,7 +52,9 @@ import {
   ArrowRight,
   AlertCircle,
   Activity,
-  XCircle
+  XCircle,
+  LifeBuoy,
+  MessageCircle
 } from 'lucide-react';
 
 // ==========================================
@@ -69,7 +70,7 @@ const firebaseConfig = {
   measurementId: "G-RQBKYLD4K5"
 };
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v2-system';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v3-system';
 const ADMIN_EMAIL = "admin@website.com"; 
 const WHATSAPP_ADMIN = "628123456789"; 
 
@@ -97,21 +98,19 @@ if (isConfigReady) {
 }
 
 export default function App() {
-  // --- States Utama ---
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   
-  // --- App States ---
   const [activeTab, setActiveTab] = useState('dashboard');
   const [files, setFiles] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
+  const [tickets, setTickets] = useState([]); // State untuk tiket bantuan
   
-  // --- UI States ---
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
@@ -124,20 +123,19 @@ export default function App() {
   const [formData, setFormData] = useState({ email: '', password: '', name: '' });
   const [productForm, setProductForm] = useState({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
   const [editingId, setEditingId] = useState(null);
+  
+  // State Form Tiket
+  const [ticketForm, setTicketForm] = useState({ subject: '', message: '' });
 
   const currentTier = userData?.subscriptionLevel || 0;
 
-  // Filtered Data (Admin Realtime Users) - Diperkuat anti-crash
   const filteredUsers = useMemo(() => {
     if (!searchUserQuery) {
        return [...allUsers].sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
     }
     const q = searchUserQuery.toLowerCase();
     return allUsers
-      .filter(u => 
-         (u.name && u.name.toLowerCase().includes(q)) || 
-         (u.email && u.email.toLowerCase().includes(q))
-      )
+      .filter(u => (u.name && u.name.toLowerCase().includes(q)) || (u.email && u.email.toLowerCase().includes(q)))
       .sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
   }, [allUsers, searchUserQuery]);
 
@@ -146,12 +144,12 @@ export default function App() {
     return files.filter(f => f.name && f.name.toLowerCase().includes(searchFileQuery.toLowerCase()));
   }, [files, searchFileQuery]);
 
-  // Admin Stats
   const adminStats = useMemo(() => {
     const totalRev = transactions.filter(t => t.status === 'approved').reduce((acc, curr) => acc + curr.price, 0);
     const pendingTrans = transactions.filter(t => t.status === 'pending').length;
-    return { totalRev, pendingTrans };
-  }, [transactions]);
+    const openTickets = tickets.filter(t => t.status === 'open').length;
+    return { totalRev, pendingTrans, openTickets };
+  }, [transactions, tickets]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -181,47 +179,47 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
-  // DATA SYNC REALTIME - Diperkuat dengan try-catch dan where query
+  // DATA SYNC REALTIME
   useEffect(() => {
     if (!user || !isConfigReady) return;
 
     const unsubProfile = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
       if (d.exists()) setUserData(d.data());
-    }, (err) => console.error("Error Sync Profile:", err));
+    });
 
     const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => {
       setFiles(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error("Error Sync Files:", err));
+    });
 
     const unsubAnnounce = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), (s) => {
       setAnnouncements(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error("Error Sync Announce:", err));
+    });
 
-    // Transaksi dipisah logikanya agar Rules Firestore tidak memblokir akses Member biasa
+    // Transaksi & Tiket Bantuan Sync
     let unsubTrans = () => {};
-    if (isAdmin) {
-      const transRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
-      unsubTrans = onSnapshot(transRef, (s) => {
-        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      }, (err) => console.error("Error Sync Admin Trans:", err));
-    } else {
-      const transRef = query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid));
-      unsubTrans = onSnapshot(transRef, (s) => {
-        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      }, (err) => console.error("Error Sync User Trans:", err));
-    }
-
+    let unsubTickets = () => {};
     let adminUnsub = () => {};
+
     if (isAdmin) {
+      unsubTrans = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), (s) => {
+        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      unsubTickets = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), (s) => {
+        setTickets(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
       adminUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => {
         setAllUsers(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      }, (err) => {
-        console.error("Error Sync Registry Admin:", err);
-        showToast("Gagal memuat data member realtime", "error");
+      });
+    } else {
+      unsubTrans = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid)), (s) => {
+        setTransactions(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      unsubTickets = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), where('userId', '==', user.uid)), (s) => {
+        setTickets(s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       });
     }
 
-    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubTrans(); adminUnsub(); };
+    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubTrans(); unsubTickets(); adminUnsub(); };
   }, [user, isAdmin]);
 
   const handleAuth = async (e) => {
@@ -232,66 +230,75 @@ export default function App() {
       if (authMode === 'register') {
         const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const init = { name: formData.name, email: formData.email, subscriptionLevel: 0, joinDate: new Date().toISOString(), uid: cred.user.uid };
-        
-        // Push ke private dan public registry secara sinkron
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
-        
         showToast("Registrasi Berhasil!");
       } else {
         await signInWithEmailAndPassword(auth, formData.email, formData.password);
         showToast("Selamat Datang!");
       }
-    } catch (err) { 
-      console.error(err);
-      showToast("Gagal masuk/daftar. Periksa kembali email Anda.", "error"); 
-    }
+    } catch (err) { showToast("Gagal masuk/daftar. Periksa kembali data Anda.", "error"); }
     setAuthLoading(false);
   };
 
   const handlePurchaseRequest = async (pkg) => {
     try {
       const transId = `TRX-${Date.now()}`;
-      const transData = {
-        id: transId,
-        userId: user.uid,
-        userName: userData.name,
-        userEmail: user.email,
-        packageLevel: pkg.level,
-        packageName: pkg.name,
-        price: pkg.price,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      };
-      
+      const transData = { id: transId, userId: user.uid, userName: userData.name, userEmail: user.email, packageLevel: pkg.level, packageName: pkg.name, price: pkg.price, status: 'pending', createdAt: new Date().toISOString() };
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), transData);
-      
       const text = `Halo Admin, konfirmasi pembayaran.%0A%0A*INV: ${transId}*%0ANama: ${userData?.name}%0APaket: ${pkg.name}%0AHarga: Rp ${pkg.price.toLocaleString('id-ID')}%0A%0A_Bukti transfer:_`;
       window.open(`https://wa.me/${WHATSAPP_ADMIN}?text=${text}`, '_blank');
-      
       setCheckoutPkg(null);
       showToast("Pesanan dibuat. Menunggu validasi admin.");
       setActiveTab('transactions');
     } catch (err) { showToast("Gagal membuat pesanan", "error"); }
   };
 
-  // FUNGSI ADMIN: Validasi Pembayaran & Buka Akses Member
   const handleTransactionAction = async (trans, action) => {
     try {
       if (action === 'approve') {
           if(!window.confirm(`Yakin ingin menerima pembayaran dan UPGRADE INSTAN member ${trans.userName} ke paket ${trans.packageName}?`)) return;
-          
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
           showToast("Pembayaran Disetujui! Akses member telah dibuka.");
       } else if (action === 'reject') {
           if(!window.confirm(`Tolak pembayaran dari ${trans.userName}?`)) return;
-          
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' });
           showToast("Pembayaran Ditolak.", "error");
       }
     } catch (err) { showToast("Gagal memproses", "error"); }
+  };
+
+  // FITUR TIKET BANTUAN
+  const handleCreateTicket = async (e) => {
+    e.preventDefault();
+    if (!ticketForm.subject || !ticketForm.message) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), {
+        userId: user.uid,
+        userName: userData.name,
+        subject: ticketForm.subject,
+        message: ticketForm.message,
+        status: 'open',
+        adminReply: '',
+        createdAt: new Date().toISOString()
+      });
+      setTicketForm({ subject: '', message: '' });
+      showToast("Tiket berhasil dikirim. Tim kami akan segera merespon.");
+    } catch (err) { showToast("Gagal mengirim tiket", "error"); }
+  };
+
+  const handleAdminReplyTicket = async (ticketId, replyText) => {
+    if (!replyText) return;
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), {
+        status: 'answered',
+        adminReply: replyText,
+        updatedAt: new Date().toISOString()
+      });
+      showToast("Balasan terkirim.");
+    } catch (err) { showToast("Gagal membalas tiket", "error"); }
   };
 
   const updateMemberTier = async (uid, level) => {
@@ -341,21 +348,18 @@ export default function App() {
     } catch (err) { console.error(err); }
   };
 
-  const closeSidebarMobile = () => {
-    if (window.innerWidth < 1024) setSidebarOpen(false);
-  };
+  const closeSidebarMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   // ==========================================
-  // VIEW: AUTHENTICATION (LOGIN/REGISTER)
+  // VIEW: AUTHENTICATION
   // ==========================================
   if (!user) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 sm:p-8 font-['Plus_Jakarta_Sans']">
       <div className="max-w-5xl w-full bg-white rounded-[2rem] sm:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-100 animate-fadeIn relative">
         {!isConfigReady && <div className="absolute top-0 left-0 w-full bg-rose-500 text-white py-2 text-center text-xs font-bold z-50">API Key Firebase Belum Dikonfigurasi!</div>}
         
-        {/* Left Side - Branding */}
         <div className="hidden md:flex md:w-1/2 bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 p-12 text-white flex-col justify-between relative overflow-hidden">
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-white opacity-10 rounded-full blur-3xl"></div>
           <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-400 opacity-20 rounded-full blur-3xl"></div>
@@ -366,19 +370,8 @@ export default function App() {
             <h1 className="text-4xl lg:text-5xl font-black font-['Outfit'] mb-6 leading-tight">Mulai Perjalanan<br/>Digital Anda.</h1>
             <p className="text-indigo-200 text-lg leading-relaxed">Platform ekosistem produk digital premium. Akses ribuan file master dan lisensi eksklusif di satu tempat.</p>
           </div>
-          <div className="relative z-10 flex gap-4">
-             <div className="bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-sm flex-1">
-                <p className="text-2xl font-black mb-1">10k+</p>
-                <p className="text-xs text-indigo-300 uppercase tracking-widest font-bold">Member Aktif</p>
-             </div>
-             <div className="bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-sm flex-1">
-                <p className="text-2xl font-black mb-1">99%</p>
-                <p className="text-xs text-indigo-300 uppercase tracking-widest font-bold">Uptime Server</p>
-             </div>
-          </div>
         </div>
 
-        {/* Right Side - Form */}
         <div className="w-full md:w-1/2 p-8 sm:p-12 lg:p-16 flex flex-col justify-center bg-white relative">
           <div className="md:hidden text-center mb-8 mt-4">
              <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
@@ -446,6 +439,7 @@ export default function App() {
               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Admin Center</p>
               <NavBtn active={activeTab==='admin_overview'} onClick={()=>{setActiveTab('admin_overview'); closeSidebarMobile();}} icon={<Activity size={20}/>} label="Overview" />
               <NavBtn active={activeTab==='admin_trans'} onClick={()=>{setActiveTab('admin_trans'); closeSidebarMobile();}} icon={<CheckCircle size={20}/>} label="Validasi Bayar" count={adminStats.pendingTrans} />
+              <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20}/>} label="Support Helpdesk" count={adminStats.openTickets} />
               <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20}/>} label="Data Member Realtime" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20}/>} label="Kelola Produk" />
               <div className="my-6 border-b border-slate-100"></div>
@@ -457,7 +451,7 @@ export default function App() {
           <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20}/>} label="File Master" count={files.filter(f=>currentTier>=f.reqLevel).length} />
           <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20}/>} label="Upgrade Paket" />
           <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20}/>} label="Riwayat Order" count={transactions.filter(t=>t.userId === user?.uid && t.status==='pending').length} />
-          
+          <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20}/>} label="Pusat Bantuan" />
         </div>
 
         <div className="p-6 border-t border-slate-100 shrink-0">
@@ -502,7 +496,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN OVERVIEW (NEW) */}
+          {/* TAB: ADMIN OVERVIEW */}
           {/* ==================================================== */}
           {activeTab === 'admin_overview' && isAdmin && (
             <div className="space-y-8 animate-fadeIn">
@@ -517,7 +511,7 @@ export default function App() {
                     <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 relative z-10">Total Pendapatan</p>
                     <p className="text-3xl font-black mt-2 font-['Outfit'] relative z-10">Rp {adminStats.totalRev.toLocaleString('id-ID')}</p>
                  </div>
-                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
+                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center relative overflow-hidden cursor-pointer hover:border-indigo-300 transition-colors" onClick={()=>setActiveTab('admin_users')}>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Member Realtime</p>
                     <p className="text-4xl font-black mt-2 text-slate-800 font-['Outfit']">{allUsers.length}</p>
                     {filteredUsers.filter(u => (new Date() - new Date(u.joinDate)) < 86400000).length > 0 && (
@@ -610,7 +604,6 @@ export default function App() {
                     <h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tight text-slate-900">Perpustakaan Produk</h2>
                     <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Unduh file master sesuai dengan lisensi paket Anda.</p>
                   </div>
-                  {/* Search File Box */}
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
                     <input type="text" placeholder="Cari nama file..." value={searchFileQuery} onChange={e=>setSearchFileQuery(e.target.value)} className="w-full sm:w-72 pl-12 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold" />
@@ -646,7 +639,6 @@ export default function App() {
                   {[1, 2, 3].map(lv => {
                     const isActive = currentTier === lv;
                     const isPassed = currentTier > lv;
-                    // Cek apakah ada transaksi pending khusus untuk level ini & milik user ini
                     const isPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
                     const isDisabled = isActive || isPassed || isPending;
 
@@ -692,7 +684,7 @@ export default function App() {
                  </div>
                ) : (
                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
-                    {transactions.map(t => (
+                    {transactions.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
                       <div key={t.id} className={`bg-white p-6 sm:p-8 rounded-[2rem] border-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm transition-all ${t.status === 'pending' ? 'border-amber-200' : 'border-slate-100 hover:shadow-lg'}`}>
                          <div className="flex items-center gap-4 sm:gap-6 w-full md:w-auto">
                             <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : t.status === 'rejected' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
@@ -721,6 +713,59 @@ export default function App() {
                     ))}
                  </div>
                )}
+            </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: SUPPORT HELPDESK (USER VIEW) */}
+          {/* ==================================================== */}
+          {activeTab === 'support' && !isAdmin && (
+            <div className="animate-fadeIn space-y-8 sm:space-y-10">
+               <div>
+                  <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Pusat Bantuan</h2>
+                  <p className="text-slate-500 font-medium text-sm sm:text-base mt-2">Kirimkan pertanyaan atau kendala Anda di sini, tim kami akan merespon.</p>
+               </div>
+               
+               <form onSubmit={handleCreateTicket} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Subjek Masalah</label>
+                     <input type="text" placeholder="Misal: Link download error" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-sm" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} required />
+                  </div>
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detail Kendala</label>
+                     <textarea placeholder="Jelaskan kendala Anda..." rows="4" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm resize-none" value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} required></textarea>
+                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">KIRIM TIKET BANTUAN</button>
+               </form>
+
+               <div className="space-y-4">
+                  <h3 className="font-black text-slate-800 text-xl">Riwayat Tiket Anda</h3>
+                  {tickets.length === 0 ? (
+                    <div className="py-10 text-center bg-white rounded-[2rem] border border-slate-200"><p className="text-slate-400 font-bold">Belum ada tiket yang dibuat.</p></div>
+                  ) : (
+                    tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(ticket => (
+                      <div key={ticket.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                         <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4">
+                            <div>
+                              <h4 className="font-black text-slate-800">{ticket.subject}</h4>
+                              <p className="text-xs text-slate-400 mt-1">{new Date(ticket.createdAt).toLocaleString('id-ID')}</p>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${ticket.status === 'open' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                              {ticket.status === 'open' ? 'MENUNGGU BALASAN' : 'DIJAWAB'}
+                            </span>
+                         </div>
+                         <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl mb-4">{ticket.message}</p>
+                         
+                         {ticket.adminReply && (
+                           <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mt-4">
+                              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center gap-1"><ShieldCheck size={14}/> BALASAN ADMIN</p>
+                              <p className="text-sm font-bold text-slate-800">{ticket.adminReply}</p>
+                           </div>
+                         )}
+                      </div>
+                    ))
+                  )}
+               </div>
             </div>
           )}
 
@@ -762,9 +807,7 @@ export default function App() {
                            <tr><td colSpan="4" className="px-8 py-16 text-center text-slate-400 font-bold italic">Member tidak ditemukan atau database kosong.</td></tr>
                         ) : (
                           filteredUsers.map(m => {
-                            // Cek apakah user mendaftar dalam kurun waktu 24 jam terakhir
                             const isNew = m.joinDate ? (new Date() - new Date(m.joinDate)) < 86400000 : false;
-                            
                             return (
                               <tr key={m.id} className="hover:bg-slate-50 transition-all">
                                 <td className="px-6 sm:px-8 py-4 sm:py-6">
@@ -846,6 +889,46 @@ export default function App() {
                   </div>
                </div>
             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: ADMIN - MANAGE SUPPORT TICKETS */}
+          {/* ==================================================== */}
+          {activeTab === 'admin_support' && isAdmin && (
+             <div className="animate-fadeIn space-y-6 sm:space-y-10">
+                <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] tracking-tight">Support Helpdesk</h2>
+                <div className="space-y-6">
+                   {tickets.length === 0 ? (
+                     <div className="py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
+                        <p className="text-slate-400 font-bold">Tidak ada tiket bantuan yang masuk.</p>
+                     </div>
+                   ) : (
+                     tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                        <div key={t.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm relative">
+                           {t.status === 'open' && <div className="absolute top-4 right-4 bg-amber-500 w-3 h-3 rounded-full animate-pulse"></div>}
+                           <p className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-1">{t.userName} <span className="text-slate-400 font-normal">({t.userId})</span></p>
+                           <h4 className="font-black text-xl text-slate-900 mb-2">{t.subject}</h4>
+                           <p className="text-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100">{t.message}</p>
+                           
+                           {t.status === 'open' ? (
+                             <form onSubmit={(e) => {
+                                e.preventDefault();
+                                handleAdminReplyTicket(t.id, e.target.reply.value);
+                             }} className="mt-4 flex gap-3">
+                                <input name="reply" type="text" placeholder="Tulis balasan untuk member..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm" required />
+                                <button type="submit" className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-700 transition-all flex items-center gap-2"><MessageCircle size={16}/> BALAS & TUTUP</button>
+                             </form>
+                           ) : (
+                             <div className="mt-4">
+                               <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1"><CheckCircle size={12} className="inline"/> SUDAH DIJAWAB</p>
+                               <p className="text-sm font-bold text-slate-800">{t.adminReply}</p>
+                             </div>
+                           )}
+                        </div>
+                     ))
+                   )}
+                </div>
+             </div>
           )}
 
           {/* ==================================================== */}
@@ -1070,11 +1153,11 @@ function ProFileCard({ file, currentTier }) {
       </div>
       <div className="relative z-10 mt-auto">
         {isAccessible ? (
-          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 sm:bg-indigo-600 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] shadow-xl sm:shadow-2xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-2 active:translate-y-0 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
+          <a href={file.url} target="_blank" rel="noopener noreferrer" className="w-full bg-slate-900 sm:bg-indigo-600 text-white text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.75rem] shadow-xl sm:shadow-2xl shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-2 active:translate-y-0 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm">
             <Download size={18} className="sm:w-5 sm:h-5"/> UNDUH SEKARANG
           </a>
         ) : (
-          <div className="w-full bg-slate-200 text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.5rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-300">Minimal Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
+          <div className="w-full bg-slate-200 text-slate-500 text-center font-black py-4 sm:py-5 rounded-2xl sm:rounded-[1.75rem] uppercase text-[9px] sm:text-[10px] tracking-widest border border-slate-300">Minimal Paket {TIER_LEVELS[file.reqLevel]?.name}</div>
         )}
       </div>
     </div>
