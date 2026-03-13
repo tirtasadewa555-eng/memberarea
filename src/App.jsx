@@ -1064,14 +1064,19 @@ export default function App() {
           );
       };
 
-      const affiliateLink = `https://member.bagihosting.com/p/login.html?ref=${publicSiteData.ownerId}`;
+      // PERBAIKAN: Fungsi internal untuk pindah ke form register/login tanpa pindah link (Mencegah 404)
+      const handleJoinClick = (mode = 'register') => {
+          setShowPublicSite(false); // Tutup landing page publik
+          setAuthMode(mode);        // Buka form pendaftaran/login
+          window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll ke atas
+      };
 
       return (
           <div className="min-h-screen bg-slate-50 font-['Plus_Jakarta_Sans'] text-slate-800 flex flex-col relative overflow-x-hidden">
               
               {/* Promo Bar */}
               <div className="bg-gradient-to-r from-rose-500 to-orange-400 text-white text-center py-3 px-4 font-bold text-sm tracking-wide shadow-md relative z-50">
-                  🔥 PROMO SPESIAL: Diskon 50% Untuk 10 Pembeli Pertama Hari Ini! <a href={affiliateLink} className="underline ml-2 font-black">KLAIM SEKARANG</a>
+                  🔥 PROMO SPESIAL: Diskon 50% Untuk 10 Pembeli Pertama Hari Ini! <button onClick={() => handleJoinClick('register')} className="underline ml-2 font-black">KLAIM SEKARANG</button>
               </div>
 
               {/* Navbar */}
@@ -1080,7 +1085,7 @@ export default function App() {
                       <div className="font-black text-2xl tracking-tighter text-slate-900 flex items-center gap-2">
                          <ShieldCheck className="text-indigo-600" size={28}/> Pro<span className="text-indigo-600">Space</span>
                       </div>
-                      <a href={affiliateLink} className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-indigo-600 transition-colors shadow-lg hidden sm:block">Member Area</a>
+                      <button onClick={() => handleJoinClick('login')} className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-indigo-600 transition-colors shadow-lg hidden sm:block">Member Area</button>
                   </div>
               </header>
 
@@ -1092,11 +1097,16 @@ export default function App() {
                   <div className="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-16 relative z-10">
                       <div className="w-full lg:w-1/2 text-center lg:text-left animate-slideInRight">
                           <span className="bg-white bg-opacity-10 border border-white border-opacity-20 text-indigo-300 font-bold px-4 py-1.5 rounded-full text-xs uppercase tracking-widest mb-6 inline-block backdrop-blur-sm">Rekomendasi Spesial: {publicSiteData.ownerName}</span>
-                          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] leading-tight mb-6 tracking-tight drop-shadow-lg" dangerouslySetInnerHTML={{ __html: publicSiteData.heroHeadline }}></h1>
-                          <p className="text-lg sm:text-xl text-slate-300 font-medium mb-10 leading-relaxed" dangerouslySetInnerHTML={{ __html: publicSiteData.heroSub }}></p>
-                          <a href={affiliateLink} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-full shadow-[0_10px_40px_rgba(79,70,229,0.5)] hover:scale-105 transition-transform text-lg flex items-center justify-center lg:justify-start gap-3 w-max mx-auto lg:mx-0">
+                          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] leading-tight mb-6 tracking-tight drop-shadow-lg">
+                              <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.heroHeadline) }}></span>
+                          </h1>
+                          <h2 className="text-lg sm:text-2xl text-indigo-300 font-medium mb-12 max-w-2xl">
+                              <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.heroSub) }}></span>
+                          </h2>
+                          
+                          <button onClick={() => handleJoinClick('register')} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-full shadow-[0_10px_40px_rgba(79,70,229,0.5)] hover:scale-105 transition-transform text-lg flex items-center justify-center lg:justify-start gap-3 w-max mx-auto lg:mx-0">
                               <Rocket size={24} /> GABUNG SEKARANG JUGA
-                          </a>
+                          </button>
                       </div>
                       <div className="w-full lg:w-1/2 relative animate-float">
                           <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 p-2 rounded-[2rem] shadow-2xl transform rotate-2 hover:rotate-0 transition-transform duration-500">
@@ -1135,7 +1145,14 @@ export default function App() {
                   <div className="max-w-3xl mx-auto text-center mb-16">
                       <h2 className="text-3xl sm:text-4xl font-black text-slate-900 mb-6 font-['Outfit']">Kenapa Harus ProSpace?</h2>
                       <div className="w-20 h-2 bg-indigo-600 rounded-full mx-auto mb-10"></div>
-                      <div className="text-lg text-slate-600 leading-loose font-medium space-y-6 text-left bg-slate-50 p-10 rounded-[2.5rem] border border-slate-100 shadow-sm" dangerouslySetInnerHTML={{ __html: publicSiteData.story }}></div>
+                      <div className="text-lg text-slate-600 leading-loose font-medium space-y-6 text-left bg-slate-50 p-10 rounded-[2.5rem] border border-slate-100 shadow-sm" dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.story) }}></div>
+                  </div>
+                  
+                  {/* Bagian Perbaikan Tombol Cerita Tengah */}
+                  <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto max-w-3xl mx-auto">
+                      <button onClick={() => handleJoinClick('register')} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-full shadow-[0_0_40px_rgba(79,70,229,0.5)] hover:scale-105 transition-transform text-lg flex items-center justify-center gap-3 w-full">
+                          <Rocket size={24} /> GABUNG SEKARANG
+                      </button>
                   </div>
               </section>
 
@@ -1200,9 +1217,11 @@ export default function App() {
                   <div className="max-w-4xl mx-auto relative z-10 bg-gradient-to-b from-indigo-600 to-purple-800 rounded-[3rem] p-12 sm:p-20 shadow-[0_20px_60px_rgba(79,70,229,0.4)] border border-indigo-400 border-opacity-30">
                       <h2 className="text-4xl sm:text-6xl font-black text-white font-['Outfit'] mb-6 tracking-tight">Ambil Keputusan Sekarang!</h2>
                       <p className="text-xl text-indigo-100 font-medium mb-12 max-w-2xl mx-auto">Jangan tunggu harga naik. Bergabunglah hari ini dan dapatkan akses penuh ke ekosistem ProSpace melalui rekomendasi {publicSiteData.ownerName}.</p>
-                      <a href={affiliateLink} className="inline-flex items-center justify-center gap-3 bg-white text-indigo-600 font-black px-12 py-6 rounded-full shadow-2xl hover:scale-105 hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all text-xl uppercase tracking-wider">
+                      
+                      {/* PERBAIKAN TOMBOL BAWAH */}
+                      <button onClick={() => handleJoinClick('register')} className="inline-flex items-center justify-center gap-3 bg-white text-indigo-600 font-black px-12 py-6 rounded-full shadow-2xl hover:scale-105 hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all text-xl uppercase tracking-wider">
                           Daftar & Kunci Diskon <ChevronRight size={24} />
-                      </a>
+                      </button>
                   </div>
               </section>
 
