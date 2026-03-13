@@ -21,33 +21,34 @@ import {
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
   HelpCircle, CheckCircle2, ListPlus, Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, 
-  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate // ICON BARU
+  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate
 } from 'lucide-react';
 
 /* =======================================================================
-  [SECURITY AUDIT & BEST PRACTICES DIKONTROL DI SINI]
+  [SECURITY AUDIT & BEST PRACTICES - FIRESTORE RULES]
   =======================================================================
-  PENTING: Firebase membutuhkan pengamanan di sisi SERVER (Firestore Rules).
-  Wajib tambahkan aturan ini di Firebase Console -> Firestore -> Rules:
+  Pastikan aturan ini aktif di Firebase Console -> Firestore -> Rules:
   
   rules_version = '2';
   service cloud.firestore {
     match /databases/{database}/documents {
-      function isAdmin() { return request.auth.token.email == 'admin@website.com'; }
-      function isOwner(userId) { return request.auth.uid == userId; }
+      function isAdmin() { return request.auth != null && request.auth.token.email == 'admin@website.com'; }
+      function isOwner(userId) { return request.auth != null && request.auth.uid == userId; }
       
       match /artifacts/{appId}/users/{userId}/profile/data {
         allow read: if isOwner(userId) || isAdmin();
-        allow update: if isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['subscriptionLevel', 'commissionBalance', 'rewardPoints'])) || isAdmin();
+        allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['subscriptionLevel', 'commissionBalance', 'rewardPoints']));
         allow create: if isOwner(userId) || isAdmin();
       }
       match /artifacts/{appId}/public/data/userRegistry/{userId} {
         allow read, write: if isAdmin() || (request.method == 'create' && isOwner(userId));
       }
-      // RULE BARU UNTUK REPLICATED SITE (PUBLIC BACA, OWNER TULIS)
       match /artifacts/{appId}/public/data/replicatedSites/{userId} {
         allow read: if true;
         allow write: if isOwner(userId) || isAdmin();
+      }
+      match /{document=**} {
+        allow read, write: if isAdmin(); // Admin full access
       }
     }
   }
@@ -93,14 +94,27 @@ const GLOBAL_CSS = `
   @media print { body * { visibility: hidden; } #printable-certificate, #printable-certificate * { visibility: visible; } #printable-certificate { position: absolute; left: 0; top: 0; width: 100%; } }
 `;
 
-// Fungsi Keamanan: Pembersih HTML (Sanitizer)
+// Fungsi Keamanan: Pembersih HTML (Sanitizer) Dasar anti XSS
 const sanitizeHTML = (str) => {
     if (!str) return '';
     return str.replace(/<script[^>]*>([\S\s]*?)<\/script>/gmi, '')
               .replace(/<\/?\w+((\s+\w+(\s*=\s*(?:".*?"|'.*?'|[^'">\s]+))?)+\s*|\s*)\/?>/gmi, (m) => m.replace(/on\w+\s*=/gi, 'data-blocked='))
               .replace(/javascript:/gi, 'blocked:');
 };
+
+// Fungsi Keamanan: Escape Input Strings
 const escapeInput = (str) => str ? str.replace(/[<>"'/]/g, "").trim() : '';
+
+// Validasi Parsing JSON Aman
+const safeJSONParse = (str) => {
+    try {
+        let cleanJson = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanJson);
+    } catch (e) {
+        console.error("Gagal parsing JSON AI:", e);
+        return null;
+    }
+};
 
 let firebaseApp, auth, db;
 const isConfigReady = firebaseConfig && firebaseConfig.apiKey;
@@ -205,7 +219,7 @@ export default function App() {
 
   const chatEndRef = useRef(null);
   const aiEndRef = useRef(null);
-  const isProcessingAction = useRef(false); 
+  const isProcessingAction = useRef(false); // Flag Global untuk mencegah click-spam
 
   // --- Derived States ---
   const currentTier = userData?.subscriptionLevel || 0;
@@ -291,9 +305,13 @@ export default function App() {
     el.value = text;
     document.body.appendChild(el);
     el.select();
-    document.execCommand('copy');
+    try {
+       document.execCommand('copy');
+       showToast("Berhasil disalin ke clipboard!");
+    } catch(err) {
+       showToast("Gagal menyalin.", "error");
+    }
     document.body.removeChild(el);
-    showToast("Berhasil disalin ke clipboard!");
   };
 
   const openWhatsAppConfirmation = (data) => {
@@ -313,8 +331,8 @@ export default function App() {
   // LOGIC: DYNAMIC AI CALL HANDLER
   // ==========================================
   const fetchFromAI = async (promptText, jsonMode = false) => {
-      if (!aiConfig.isActive) throw new Error("Fitur AI dimatikan oleh Admin.");
-      if (!aiConfig.apiKey) throw new Error("API Key belum dikonfigurasi.");
+      if (!aiConfig.isActive) throw new Error("Fitur AI dimatikan sementara oleh Admin.");
+      if (!aiConfig.apiKey) throw new Error("API Key sistem belum dikonfigurasi.");
 
       try {
           if (aiConfig.provider === 'gemini') {
@@ -343,7 +361,7 @@ export default function App() {
               if(data.error) throw new Error(data.error.message);
               return data.choices[0].message.content;
           } else {
-             throw new Error("Provider belum disupport.");
+             throw new Error("Provider AI belum didukung sistem.");
           }
       } catch (err) {
           throw err;
@@ -356,21 +374,21 @@ export default function App() {
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
 
+    // Memeriksa Parameter Referral & Membuka Landing Page Publik (Replicated Site)
     const checkPublicSite = async () => {
         const params = new URLSearchParams(window.location.search);
         const refCode = params.get('ref') || params.get('aff');
         
         if (refCode && /^[a-zA-Z0-9_-]{5,50}$/.test(refCode)) {
             localStorage.setItem('affiliate_ref_v14', refCode);
-            // Ambil data landing page milik referrer
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', refCode);
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists()) {
                     setPublicSiteData(docSnap.data());
-                    setShowPublicSite(true); // Munculkan LP Publik
+                    setShowPublicSite(true); 
                 }
-            } catch(e) { console.error("Gagal load public site"); }
+            } catch(e) { console.error("Gagal memuat landing page affiliate"); }
         }
     };
     checkPublicSite();
@@ -387,7 +405,7 @@ export default function App() {
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
-      // Jika sudah login, paksa tutup public site
+      // Tutup otomatis public site jika user sudah login
       if (u) setShowPublicSite(false);
       setLoading(false);
     });
@@ -458,7 +476,7 @@ export default function App() {
   }, [user, isAdmin]);
 
 
-  // --- Pomodoro Timer Engine ---
+  // --- Pomodoro Timer Engine (Dengan Validasi Anti-Cheat Waktu) ---
   useEffect(() => {
     let interval;
     if (isFocusing && focusTimeLeft > 0) {
@@ -474,9 +492,10 @@ export default function App() {
 
   const handleFocusComplete = async () => {
     if (focusMode === 'work') {
+       // Keamanan: Validasi bahwa waktu yg dihabiskan logis (Min. 24 menit secara real-time untuk sesi 25 menit)
        const timeElapsedMs = Date.now() - (focusStartTimeRef.current || Date.now());
        if (timeElapsedMs < 24 * 60 * 1000) {
-           showToast("Aktivitas tidak wajar terdeteksi. Sesi dibatalkan.", "error");
+           showToast("Aktivitas tidak wajar terdeteksi. Poin sesi dibatalkan.", "error");
            setFocusMode('work'); setFocusTimeLeft(25 * 60); return;
        }
        try {
@@ -502,6 +521,7 @@ export default function App() {
   useEffect(() => {
     if (activeTab === 'community') chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sortedChat, activeTab]);
+
   useEffect(() => {
     if (isAIOpen) aiEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [aiMessages, isAIOpen]);
@@ -514,6 +534,7 @@ export default function App() {
     e.preventDefault();
     if (!isConfigReady) return showToast("Config Firebase belum diisi!", "error");
     if (isProcessingAction.current) return;
+    
     isProcessingAction.current = true;
     setAuthLoading(true);
     try {
@@ -529,6 +550,7 @@ export default function App() {
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         localStorage.removeItem('affiliate_ref_v14');
+        
         logActivity(`${escapeInput(formData.name)} baru saja bergabung! 👋`, 'join');
         showToast("Registrasi Berhasil!");
       } else {
@@ -544,8 +566,10 @@ export default function App() {
     if (isProcessingAction.current) return;
     isProcessingAction.current = true;
     const today = new Date().toDateString();
+    
     if (userData?.lastCheckInDate === today) {
-        isProcessingAction.current = false; return showToast("Sudah klaim hari ini.", "error");
+        isProcessingAction.current = false; 
+        return showToast("Sudah klaim hari ini.", "error");
     }
     try {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(10), lastCheckInDate: today });
@@ -555,15 +579,20 @@ export default function App() {
     isProcessingAction.current = false;
   };
 
+  // --- LOGIC: AI KUIS PINTAR EDUKASI ---
   const handleGenerateAIQuiz = async () => {
+      if (isGeneratingQuiz) return;
       setIsGeneratingQuiz(true); setAiQuiz(null); setSelectedQuizAnswer(null);
       try {
-          const prompt = `Buatkan 1 soal kuis pilihan ganda yang sangat edukatif tentang digital marketing, bisnis online, affiliate, atau teknologi web. Wajib direturn murni dalam format JSON valid. Struktur: {"q": "pertanyaan", "options": ["A", "B", "C", "D"], "answer": 0_sampai_3, "exp": "penjelasan"}`;
+          const prompt = `Buatkan 1 soal kuis pilihan ganda yang sangat edukatif tentang digital marketing, bisnis online, affiliate, atau teknologi web. Wajib direturn murni dalam format JSON valid. Struktur: {"q": "pertanyaan", "options": ["A", "B", "C", "D"], "answer": 0_sampai_3, "exp": "penjelasan singkat"}`;
           const rawResult = await fetchFromAI(prompt, true);
-          let cleanJson = rawResult.replace(/```json/gi, '').replace(/```/g, '').trim();
-          setAiQuiz(JSON.parse(cleanJson));
+          const quizData = safeJSONParse(rawResult);
+          
+          if(!quizData || !quizData.q || !quizData.options) throw new Error("Format AI tidak valid.");
+          
+          setAiQuiz(quizData);
           showToast("Kuis baru berhasil dibuat oleh AI!", "success");
-      } catch(e) { showToast("Gagal generate kuis. Periksa API Key.", "error"); }
+      } catch(e) { showToast("Gagal generate kuis. Periksa API Key / Model.", "error"); }
       setIsGeneratingQuiz(false);
   };
 
@@ -576,6 +605,7 @@ export default function App() {
       const isCorrect = selectedIndex === aiQuiz.answer;
       const pointEarned = isCorrect ? 20 : 5;
 
+      // Timeout untuk UX (memberi efek berpikir)
       setTimeout(async () => {
           if (!hasAnsweredToday) {
               try {
@@ -601,19 +631,19 @@ export default function App() {
       setIsGeneratingLP(true);
 
       try {
-          const ownerName = userData?.name || 'Member';
-          const prompt = `Anda adalah expert copywriter untuk produk digital "ProSpace Membership". Buatkan konten untuk landing page afiliasi atas nama "${ownerName}". Target audiens: orang yang ingin belajar AI dan digital marketing untuk cari uang. Berikan HANYA format JSON valid: {"headline": "Judul bombastis, max 10 kata", "subheadline": "Subjudul persuasif", "story": "Cerita pendek 3 paragraf dengan tag HTML <p> dan <b> tentang kenapa harus gabung ProSpace bersama ${ownerName}"}`;
+          const ownerName = escapeInput(userData?.name) || 'Member';
+          const prompt = `Anda adalah expert copywriter untuk produk digital "ProSpace Membership". Buatkan konten untuk landing page afiliasi atas nama "${ownerName}". Target audiens: orang yang ingin belajar AI dan digital marketing untuk cari uang. Berikan HANYA format JSON valid tanpa markdown tambahan: {"headline": "Judul bombastis, max 10 kata", "subheadline": "Subjudul persuasif", "story": "Cerita pendek 3 paragraf dengan tag HTML <p> dan <b> tentang kenapa harus gabung ProSpace bersama ${ownerName}"}`;
           
           const rawResult = await fetchFromAI(prompt, true);
-          let cleanJson = rawResult.replace(/```json/gi, '').replace(/```/g, '').trim();
-          const lpData = JSON.parse(cleanJson);
+          const lpData = safeJSONParse(rawResult);
+          if(!lpData || !lpData.headline || !lpData.story) throw new Error("Format AI terpotong.");
 
           // Simpan ke Firestore Public Collection
           const siteData = {
               ownerName: ownerName,
               ownerId: user.uid,
-              headline: lpData.headline,
-              subheadline: lpData.subheadline,
+              headline: sanitizeHTML(lpData.headline),
+              subheadline: sanitizeHTML(lpData.subheadline),
               story: sanitizeHTML(lpData.story),
               updatedAt: new Date().toISOString()
           };
@@ -621,7 +651,7 @@ export default function App() {
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', user.uid), siteData);
           showToast("Halaman Landing Page AI Anda berhasil mengudara! 🚀", "success");
       } catch (err) {
-          showToast("Gagal men-generate website. Coba lagi.", "error");
+          showToast("Gagal men-generate website. Silakan coba lagi.", "error");
       }
       setIsGeneratingLP(false);
   };
@@ -631,10 +661,12 @@ export default function App() {
     if (completedLessons.includes(lesson.id)) return showToast("Sudah diselesaikan sebelumnya.", "error");
     if (isProcessingAction.current) return;
     isProcessingAction.current = true;
+    
     if (isQuiz) {
         if (selectedOpt !== lesson.answer) { isProcessingAction.current = false; return showToast(`Jawaban Kurang Tepat! ${lesson.exp}`, "error"); }
         showToast(`Jawaban Tepat! +${lesson.points} Poin. ${lesson.exp}`, "success");
     } else { showToast(`Materi Selesai! +${lesson.points} Poin Reward.`, "success"); }
+    
     try {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { completedLessons: arrayUnion(lesson.id), rewardPoints: increment(lesson.points) });
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(lesson.points) });
@@ -658,23 +690,28 @@ export default function App() {
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
       const safeProfile = { phone: escapeInput(profileForm.phone), bank: escapeInput(profileForm.bank), accountNo: escapeInput(profileForm.accountNo) };
       await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), safeProfile);
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), safeProfile);
       showToast("Profil diperbarui!");
     } catch(err) { showToast("Gagal update profil", "error"); }
+    isProcessingAction.current = false;
   };
 
   // --- ADMIN ACADEMY CRUD ---
   const handleAdminAddModul = async (e) => {
       e.preventDefault();
-      if(!modulTitle) return;
+      if(!modulTitle || isProcessingAction.current) return;
+      isProcessingAction.current = true;
       try {
           const modId = `modul_${Date.now()}`;
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'modules', modId), { id: modId, title: escapeInput(modulTitle), lessons: [], createdAt: new Date().toISOString() });
           setModulTitle(''); showToast("Modul Kelas berhasil ditambahkan!");
       } catch(e) {}
+      isProcessingAction.current = false;
   };
   const handleAdminDeleteModul = async (modId) => {
       if(!window.confirm("Hapus seluruh Modul ini beserta isinya?")) return;
@@ -682,13 +719,14 @@ export default function App() {
   };
   const handleAdminSaveLesson = async (e) => {
       e.preventDefault();
-      if(!targetModulId) return;
+      if(!targetModulId || isProcessingAction.current) return;
+      isProcessingAction.current = true;
       try {
           const modRef = doc(db, 'artifacts', appId, 'public', 'data', 'modules', targetModulId);
           const targetMod = academyModules.find(m => m.id === targetModulId);
           const newLesson = {
               id: `lsn_${Date.now()}`, title: escapeInput(lessonForm.title), type: lessonForm.type,
-              points: parseInt(lessonForm.points) || 10, content: lessonForm.content, desc: lessonForm.desc,
+              points: parseInt(lessonForm.points) || 10, content: sanitizeHTML(lessonForm.content), desc: sanitizeHTML(lessonForm.desc),
               question: escapeInput(lessonForm.question), options: lessonForm.options.map(o => escapeInput(o)), answer: parseInt(lessonForm.answer), exp: escapeInput(lessonForm.exp)
           };
           const updatedLessons = [...(targetMod.lessons || []), newLesson];
@@ -697,6 +735,7 @@ export default function App() {
           setLessonForm({ title: '', type: 'video', content: '', desc: '', points: 15, question: '', options: ['', '', '', ''], answer: 0, exp: '' });
           showToast("Materi berhasil dimasukkan ke Modul!");
       } catch (err) {}
+      isProcessingAction.current = false;
   };
   const handleAdminDeleteLesson = async (modId, lessonId) => {
       if(!window.confirm("Hapus materi ini?")) return;
@@ -715,13 +754,15 @@ export default function App() {
   };
   const handleAdminUpdateUserCRM = async (e) => {
       e.preventDefault();
-      if(!selectedUserDetail) return;
+      if(!selectedUserDetail || isProcessingAction.current) return;
+      isProcessingAction.current = true;
       try {
           const updateData = { name: escapeInput(editUserForm.name), phone: escapeInput(editUserForm.phone), bank: escapeInput(editUserForm.bank), accountNo: escapeInput(editUserForm.accountNo), rewardPoints: parseInt(editUserForm.rewardPoints), commissionBalance: parseInt(editUserForm.commissionBalance), subscriptionLevel: parseInt(editUserForm.subscriptionLevel) };
           await updateDoc(doc(db, 'artifacts', appId, 'users', selectedUserDetail.uid, 'profile', 'data'), updateData);
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', selectedUserDetail.uid), updateData);
           showToast("Data Member CRM Berhasil Diupdate!"); setSelectedUserDetail(null);
       } catch(err) {}
+      isProcessingAction.current = false;
   };
   const deleteMemberData = async (uid) => {
     if(!window.confirm("HAPUS DATA MEMBER PERMANEN DARI REGISTRY?")) return;
@@ -734,8 +775,11 @@ export default function App() {
     if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Form harus lengkap!", "error");
     if (isProcessingAction.current) return;
     isProcessingAction.current = true;
+
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
+      
+      // Keamanan: Kalkulasi Ulang Harga (Mencegah manipulasi finalPrice di Frontend lewat DevTools)
       const basePrice = TIER_LEVELS[checkoutPkg.level]?.price || 0;
       const discountVal = appliedCoupon && appliedCoupon.active ? appliedCoupon.discount : 0;
       const trueFinalPrice = basePrice - (basePrice * discountVal / 100);
@@ -754,9 +798,11 @@ export default function App() {
   };
 
   const handleTransactionAction = async (trans, action) => {
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
       if (action === 'approve') {
-          if(!window.confirm(`Setujui pembayaran dari ${trans.senderName}?`)) return;
+          if(!window.confirm(`Setujui pembayaran dari ${trans.senderName}?`)) { isProcessingAction.current = false; return; }
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
@@ -772,6 +818,7 @@ export default function App() {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' }); showToast("Ditolak", "error");
       }
     } catch (err) {}
+    isProcessingAction.current = false;
   };
 
   const handleRequestWithdrawal = async () => {
@@ -782,7 +829,9 @@ export default function App() {
     isProcessingAction.current = true;
     try {
       const amountToWithdraw = affiliateBalance;
+      // Keamanan ekstra: cegah withdraw nominal negatif/nol
       if (amountToWithdraw <= 0) { isProcessingAction.current = false; return; }
+      
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
         userId: user.uid, userName: userData?.name || user?.email || 'Member', bank: userData.bank, accountNo: userData.accountNo, amount: amountToWithdraw, status: 'pending', createdAt: new Date().toISOString()
       });
@@ -793,7 +842,10 @@ export default function App() {
     } catch(e) {}
     isProcessingAction.current = false;
   };
+
   const handleAdminWithdrawalAction = async (wdId, action, userId, amount) => {
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
       if (action === 'rejected') {
@@ -802,6 +854,7 @@ export default function App() {
          showToast("Pencairan ditolak. Saldo dikembalikan.", "error");
       } else { showToast("Pencairan dana SELESAI."); }
     } catch(e) {}
+    isProcessingAction.current = false;
   }
   const handleDeleteWithdrawal = async (wdId) => {
       if(!window.confirm("Hapus riwayat penarikan dana ini permanen?")) return;
@@ -832,11 +885,13 @@ export default function App() {
   // --- MISC (CHAT, TICKET) ---
   const handleSendChat = async (e) => {
     e.preventDefault();
-    if(!chatInput.trim()) return;
+    if(!chatInput.trim() || isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), { userId: user.uid, userName: userData?.name || user?.email?.split('@')[0] || 'Member', text: escapeInput(chatInput), isAdmin, rankName: userRank.name, rankBg: userRank.bg, rankColor: userRank.color, createdAt: new Date().toISOString() });
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), { userId: user.uid, userName: userData?.name || user?.email?.split('@')[0] || 'Member', text: sanitizeHTML(chatInput), isAdmin, rankName: userRank.name, rankBg: userRank.bg, rankColor: userRank.color, createdAt: new Date().toISOString() });
         setChatInput('');
     } catch(e) {}
+    isProcessingAction.current = false;
   };
   const handleDeleteChat = async (id) => {
     if(!window.confirm('Hapus chat?')) return;
@@ -844,15 +899,19 @@ export default function App() {
   };
   const handleCreateTicket = async (e) => {
     e.preventDefault();
-    if (!ticketForm.subject || !ticketForm.message) return;
+    if (!ticketForm.subject || !ticketForm.message || isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), { userId: user.uid, userName: userData?.name || user?.email || 'Member', subject: escapeInput(ticketForm.subject), message: escapeInput(ticketForm.message), status: 'open', adminReply: '', createdAt: new Date().toISOString() });
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), { userId: user.uid, userName: userData?.name || user?.email || 'Member', subject: escapeInput(ticketForm.subject), message: sanitizeHTML(ticketForm.message), status: 'open', adminReply: '', createdAt: new Date().toISOString() });
       setTicketForm({ subject: '', message: '' }); showToast("Tiket Bantuan dikirim.");
     } catch (err) {}
+    isProcessingAction.current = false;
   };
   const handleAdminReplyTicket = async (ticketId, replyText) => {
-    if (!replyText) return;
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: escapeInput(replyText), updatedAt: new Date().toISOString() }); showToast("Balasan terkirim."); } catch (err) {}
+    if (!replyText || isProcessingAction.current) return;
+    isProcessingAction.current = true;
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: sanitizeHTML(replyText), updatedAt: new Date().toISOString() }); showToast("Balasan terkirim."); } catch (err) {}
+    isProcessingAction.current = false;
   };
   const handleDeleteTicket = async (ticketId) => {
     if(!window.confirm("Hapus tiket ini?")) return;
@@ -860,11 +919,14 @@ export default function App() {
   }
   const handleProductSubmit = async (e) => {
     e.preventDefault();
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
       const data = { name: escapeInput(productForm.name), size: escapeInput(productForm.size), reqLevel: parseInt(productForm.reqLevel), url: productForm.url, category: productForm.category, updatedAt: serverTimestamp() };
       if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingId), data); showToast("Diperbarui"); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() }); showToast("Ditambahkan"); }
       setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' }); setEditingId(null);
     } catch (err) {}
+    isProcessingAction.current = false;
   };
 
   // --- LOGIC: PROSPACE AI MENTOR ---
@@ -873,11 +935,12 @@ export default function App() {
     if(!aiInput.trim()) return;
     if (!aiConfig.isActive) return showToast("Fitur AI Mentor sedang dinonaktifkan oleh Admin.", "error");
 
-    const newMsgs = [...aiMessages, { role: 'user', text: escapeInput(aiInput) }];
+    const safeInput = escapeInput(aiInput);
+    const newMsgs = [...aiMessages, { role: 'user', text: safeInput }];
     setAiMessages(newMsgs); setAiInput(''); setAiTyping(true);
 
     try {
-        const prompt = `Anda adalah 'ProSpace AI Mentor', asisten AI pintar khusus untuk member platform edukasi bisnis digital. Jawablah dengan bahasa Indonesia yang ramah, ringkas, dan jelas. \n\nPertanyaan User: ${aiInput}`;
+        const prompt = `Anda adalah 'ProSpace AI Mentor', asisten AI pintar khusus untuk member platform edukasi bisnis digital. Jawablah dengan bahasa Indonesia yang ramah, ringkas, dan jelas. \n\nPertanyaan User: ${safeInput}`;
         const reply = await fetchFromAI(prompt);
         setAiMessages(prev => [...prev, { role: 'ai', text: sanitizeHTML(reply) }]);
     } catch(err) {
@@ -892,7 +955,7 @@ export default function App() {
       if (!aiConfig.isActive) return showToast("Fitur AI Copilot dinonaktifkan oleh Admin sementara waktu.", "error");
       setIsGeneratingCopy(true); setCopilotResult('');
       try {
-          const link = `https://domainanda.com/?ref=${user?.uid || '123'}`;
+          const link = `https://member.bagihosting.com/?ref=${user?.uid || '123'}`;
           const safeProduct = escapeInput(copilotForm.product);
           const prompt = `Buatkan 1 teks copywriting promosi bahasa Indonesia untuk platform ${copilotForm.platform} dengan gaya penulisan ${copilotForm.tone}. Produk yang dijual adalah "${safeProduct}". Jangan gunakan markdown berlebihan (\`\`\`). Sertakan emoji secukupnya. Di kalimat paling akhir, arahkan pembaca untuk mengklik link ini: ${link}`;
           const result = await fetchFromAI(prompt);
@@ -953,20 +1016,20 @@ export default function App() {
                   <div className="font-black text-2xl tracking-tighter text-white flex items-center gap-2">
                      <ShieldCheck className="text-indigo-400" /> ProSpace
                   </div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-white bg-opacity-10 px-4 py-2 rounded-full border border-white border-opacity-10 backdrop-blur-sm">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-white bg-opacity-10 px-4 py-2 rounded-full border border-white border-opacity-10 backdrop-blur-sm shadow-sm">
                       Refference: {publicSiteData.ownerName.split(' ')[0]}
                   </div>
               </header>
 
               <main className="flex-1 flex flex-col items-center justify-center p-6 text-center relative z-10 max-w-4xl mx-auto w-full animate-slideUp">
-                  <h1 className="text-4xl sm:text-6xl font-black text-white font-['Outfit'] leading-tight mb-6 tracking-tight">
-                      {publicSiteData.headline}
+                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white font-['Outfit'] leading-tight mb-6 tracking-tight drop-shadow-lg">
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.headline) }}></span>
                   </h1>
-                  <h2 className="text-xl sm:text-2xl text-indigo-300 font-medium mb-12">
-                      {publicSiteData.subheadline}
+                  <h2 className="text-lg sm:text-2xl text-indigo-300 font-medium mb-12 max-w-2xl">
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.subheadline) }}></span>
                   </h2>
                   
-                  <div className="bg-white bg-opacity-5 backdrop-blur-xl border border-white border-opacity-10 rounded-[2.5rem] p-8 sm:p-12 mb-12 text-left w-full shadow-2xl text-lg text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: publicSiteData.story }}>
+                  <div className="bg-slate-900 bg-opacity-40 backdrop-blur-xl border border-white border-opacity-10 rounded-[2.5rem] p-8 sm:p-12 mb-12 text-left w-full shadow-2xl text-base sm:text-lg text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.story) }}>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto">
@@ -1006,8 +1069,9 @@ export default function App() {
             {authMode==='register' && <input type="text" placeholder="Nama Lengkap" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-sm" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} required />}
             <input type="email" placeholder="Alamat Email" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-sm" value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} required />
             <input type="password" placeholder="Password" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-sm" value={formData.password} onChange={e=>setFormData({...formData, password: e.target.value})} required />
-            <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl transition-all disabled:opacity-50">
-               {authLoading ? 'PROSES...' : authMode==='login' ? 'MASUK KE DASHBOARD' : 'DAFTAR SEKARANG'}
+            <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+               {authLoading && <RefreshCw size={18} className="animate-spin" />}
+               {authLoading ? 'MEMPROSES...' : authMode==='login' ? 'MASUK KE DASHBOARD' : 'DAFTAR SEKARANG'}
             </button>
           </form>
       </div>
@@ -1420,8 +1484,8 @@ export default function App() {
                                  <div>
                                      <div className="bg-slate-50 rounded-2xl border border-slate-200 p-8 relative overflow-hidden">
                                          <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-4">Preview Teks Website Anda</p>
-                                         <h1 className="text-3xl font-black text-slate-900 mb-4 font-['Outfit']">{myLandingPage.headline}</h1>
-                                         <h2 className="text-lg text-indigo-600 font-bold mb-6">{myLandingPage.subheadline}</h2>
+                                         <h1 className="text-3xl font-black text-slate-900 mb-4 font-['Outfit']" dangerouslySetInnerHTML={{__html: myLandingPage.headline}}></h1>
+                                         <h2 className="text-lg text-indigo-600 font-bold mb-6" dangerouslySetInnerHTML={{__html: myLandingPage.subheadline}}></h2>
                                          <div className="text-slate-600 leading-relaxed font-medium" dangerouslySetInnerHTML={{__html: myLandingPage.story}}></div>
                                          <div className="absolute top-0 right-0 p-4 opacity-10"><LayoutTemplate size={120} /></div>
                                      </div>
@@ -1431,7 +1495,7 @@ export default function App() {
                                              <input type="text" readOnly value={`https://member.bagihosting.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-700 px-2 truncate" />
                                              <button onClick={() => copyToClipboard(`https://member.bagihosting.com/?ref=${user?.uid}`)} className="bg-white border shadow-sm text-indigo-600 p-2.5 rounded-lg hover:bg-indigo-50"><Copy size={16} /></button>
                                          </div>
-                                         <button onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-slate-900 text-white font-black px-6 py-4 rounded-xl hover:bg-indigo-600 transition-all text-sm shrink-0 flex items-center gap-2">
+                                         <button onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-slate-900 text-white font-black px-6 py-4 rounded-xl hover:bg-indigo-600 transition-all text-sm shrink-0 flex items-center gap-2 disabled:opacity-50">
                                              {isGeneratingLP ? <RefreshCw size={18} className="animate-spin" /> : <RefreshCw size={18} />} PERBARUI TEKS AI
                                          </button>
                                      </div>
@@ -1479,7 +1543,7 @@ export default function App() {
                                      </select>
                                  </div>
                              </div>
-                             <button type="submit" disabled={isGeneratingCopy} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black py-5 rounded-2xl shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
+                             <button type="submit" disabled={isGeneratingCopy} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black py-5 rounded-2xl shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-3 disabled:opacity-50">
                                  {isGeneratingCopy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Wand2 size={20} />}
                                  {isGeneratingCopy ? 'AI SEDANG MENULIS...' : 'GENERATE COPYWRITING'}
                              </button>
@@ -1738,7 +1802,7 @@ export default function App() {
                    </div>
                    <form onSubmit={handleSendChat} className="p-4 bg-white border-t flex gap-2 shrink-0">
                        <input type="text" placeholder="Ketik pesan..." className="flex-1 px-5 py-4 bg-slate-100 rounded-2xl outline-none text-sm font-medium focus:ring-2 focus:ring-indigo-500" value={chatInput} onChange={e=>setChatInput(e.target.value)} required />
-                       <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl shadow-lg hover:bg-indigo-700 transition-all"><Send size={20} /></button>
+                       <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white p-4 rounded-2xl shadow-lg hover:bg-indigo-700 transition-all disabled:opacity-50"><Send size={20} /></button>
                    </form>
                 </div>
              </div>
@@ -1862,8 +1926,8 @@ export default function App() {
                                <td className="px-8 py-6 font-black text-indigo-600">Rp {t.price.toLocaleString('id-ID')}</td>
                                <td className="px-8 py-6 text-center">
                                   <div className="flex justify-center gap-2">
-                                     <button onClick={()=>handleTransactionAction(t, 'approve')} className="bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-black text-[9px] uppercase hover:bg-emerald-600 transition-all shadow-lg">TERIMA</button>
-                                     <button onClick={()=>handleTransactionAction(t, 'reject')} className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-black text-[9px] uppercase"><XCircle size={14} /></button>
+                                     <button onClick={()=>handleTransactionAction(t, 'approve')} disabled={isProcessingAction.current} className="bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-black text-[9px] uppercase hover:bg-emerald-600 transition-all shadow-lg disabled:opacity-50">TERIMA</button>
+                                     <button onClick={()=>handleTransactionAction(t, 'reject')} disabled={isProcessingAction.current} className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-black text-[9px] uppercase disabled:opacity-50"><XCircle size={14} /></button>
                                   </div>
                                </td>
                             </tr>
@@ -1893,8 +1957,8 @@ export default function App() {
                                <td className="px-8 py-6"><p className="font-black text-slate-900 text-base">Rp {w.amount.toLocaleString('id-ID')}</p><p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${w.status === 'pending' ? 'text-amber-500' : w.status === 'approved' ? 'text-emerald-500' : 'text-rose-500'}`}>{w.status}</p></td>
                                <td className="px-8 py-6 text-center">
                                   <div className="flex justify-center gap-2">
-                                    {w.status === 'pending' && (<><button onClick={()=>handleAdminWithdrawalAction(w.id, 'approved', w.userId, w.amount)} className="bg-emerald-500 text-white p-2.5 rounded-xl shadow-lg hover:bg-emerald-600"><CheckCircle size={16} /></button><button onClick={()=>handleAdminWithdrawalAction(w.id, 'rejected', w.userId, w.amount)} className="bg-amber-100 text-amber-600 p-2.5 rounded-xl hover:bg-amber-200"><XCircle size={16} /></button></>)}
-                                    <button onClick={()=>handleDeleteWithdrawal(w.id)} className="bg-rose-50 text-rose-600 p-2.5 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
+                                    {w.status === 'pending' && (<><button onClick={()=>handleAdminWithdrawalAction(w.id, 'approved', w.userId, w.amount)} disabled={isProcessingAction.current} className="bg-emerald-500 text-white p-2.5 rounded-xl shadow-lg hover:bg-emerald-600 disabled:opacity-50"><CheckCircle size={16} /></button><button onClick={()=>handleAdminWithdrawalAction(w.id, 'rejected', w.userId, w.amount)} disabled={isProcessingAction.current} className="bg-amber-100 text-amber-600 p-2.5 rounded-xl hover:bg-amber-200 disabled:opacity-50"><XCircle size={16} /></button></>)}
+                                    <button onClick={()=>handleDeleteWithdrawal(w.id)} disabled={isProcessingAction.current} className="bg-rose-50 text-rose-600 p-2.5 rounded-xl hover:bg-rose-100 disabled:opacity-50"><Trash2 size={16} /></button>
                                   </div>
                                </td>
                             </tr>
@@ -1914,13 +1978,13 @@ export default function App() {
                    <div className="bg-indigo-600 rounded-[2rem] p-10 text-white shadow-xl shadow-indigo-200">
                       <p className="text-[10px] font-black uppercase text-indigo-200">Saldo Komisi Aktif</p>
                       <p className="text-5xl font-black mt-2 font-['Outfit']">Rp {affiliateBalance.toLocaleString('id-ID')}</p>
-                      <button onClick={handleRequestWithdrawal} className="mt-8 bg-white text-indigo-600 px-6 py-4 rounded-xl font-black text-sm shadow-lg hover:scale-105 transition-transform">TARIK SALDO KE REKENING</button>
+                      <button onClick={handleRequestWithdrawal} disabled={isProcessingAction.current} className="mt-8 bg-white text-indigo-600 px-6 py-4 rounded-xl font-black text-sm shadow-lg hover:scale-105 transition-transform disabled:opacity-50">TARIK SALDO KE REKENING</button>
                    </div>
                    <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Link Referral Anda</p>
                       <div className="flex bg-slate-50 border rounded-xl p-2 items-center">
-                         <input type="text" readOnly value={`https://domainanda.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-600 px-3 truncate" />
-                         <button onClick={()=>copyToClipboard(`https://domainanda.com/?ref=${user?.uid}`)} className="bg-indigo-100 text-indigo-600 p-3 rounded-lg"><Copy size={16} /></button>
+                         <input type="text" readOnly value={`https://member.bagihosting.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-600 px-3 truncate" />
+                         <button onClick={()=>copyToClipboard(`https://member.bagihosting.com/?ref=${user?.uid}`)} className="bg-indigo-100 text-indigo-600 p-3 rounded-lg hover:bg-indigo-200"><Copy size={16} /></button>
                       </div>
                    </div>
                 </div>
@@ -1959,6 +2023,81 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB: ADMIN KELOLA FILE MASTER */}
+          {activeTab === 'admin_files' && isAdmin && (
+             <div className="animate-fadeIn space-y-10">
+                <h2 className="text-3xl font-black text-slate-900">Kelola Produk & File Master</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   <div className="lg:col-span-1">
+                      <form onSubmit={handleProductSubmit} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
+                         <h3 className="font-black text-lg text-slate-800">{editingId ? 'Edit Produk' : 'Tambah Produk'}</h3>
+                         <input type="text" placeholder="Nama Produk" value={productForm.name} onChange={e=>setProductForm({...productForm, name:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <select value={productForm.category} onChange={e=>setProductForm({...productForm, category:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm">
+                            <option>Ebook</option><option>Video</option><option>Software</option>
+                         </select>
+                         <input type="text" placeholder="Ukuran (Cth: 15 MB)" value={productForm.size} onChange={e=>setProductForm({...productForm, size:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm">
+                            {[1,2,3].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}
+                         </select>
+                         <input type="url" placeholder="URL Download Asli" value={productForm.url} onChange={e=>setProductForm({...productForm, url:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <button type="submit" disabled={isProcessingAction.current} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50">{editingId ? 'SIMPAN EDIT' : 'TAMBAH KE KATALOG'}</button>
+                      </form>
+                   </div>
+                   <div className="lg:col-span-2 space-y-4">
+                      {files.map(f => (
+                         <div key={f.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex justify-between items-center shadow-sm">
+                            <div>
+                               <h4 className="font-black text-slate-900 text-lg">{f.name}</h4>
+                               <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{f.category} • Tier {f.reqLevel}</p>
+                            </div>
+                            <div className="flex gap-2">
+                               <button onClick={()=>{setEditingId(f.id); setProductForm({name:f.name, size:f.size, reqLevel:f.reqLevel, url:f.url, category:f.category}); window.scrollTo({top:0, behavior:'smooth'});}} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100"><Edit3 size={16} /></button>
+                               <button onClick={async ()=>{if(window.confirm('Hapus file ini?')) await deleteDoc(doc(db,'artifacts',appId,'public','data','files',f.id));}} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
+                            </div>
+                         </div>
+                      ))}
+                   </div>
+                </div>
+             </div>
+          )}
+
+          {/* TAB: ADMIN KELOLA KUPON */}
+          {activeTab === 'admin_coupons' && isAdmin && (
+             <div className="animate-fadeIn space-y-10">
+                <h2 className="text-3xl font-black text-slate-900">Kelola Kupon Diskon</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   <div className="lg:col-span-1">
+                      <form onSubmit={handleCreateCoupon} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
+                         <h3 className="font-black text-lg text-slate-800">Buat Kupon Baru</h3>
+                         <input type="text" placeholder="Kode Promo (Maks 10 Huruf)" value={couponForm.code} onChange={e=>setCouponForm({...couponForm, code: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm uppercase" required />
+                         <input type="number" placeholder="Diskon (Dalam %)" value={couponForm.discount} onChange={e=>setCouponForm({...couponForm, discount: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
+                         <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all">BUAT KUPON</button>
+                      </form>
+                   </div>
+                   <div className="lg:col-span-2">
+                      <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                         <table className="w-full text-left">
+                            <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
+                               <tr><th className="px-8 py-5">Kode Kupon</th><th className="px-8 py-5">Diskon</th><th className="px-8 py-5 text-center">Tindakan</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                               {coupons.map(c => (
+                                  <tr key={c.id}>
+                                     <td className="px-8 py-6 font-mono font-black text-indigo-600">{c.code}</td>
+                                     <td className="px-8 py-6 font-black">{c.discount}% OFF</td>
+                                     <td className="px-8 py-6 text-center">
+                                        <button onClick={()=>handleDeleteCoupon(c.id)} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
+                                     </td>
+                                  </tr>
+                               ))}
+                            </tbody>
+                         </table>
+                      </div>
+                   </div>
+                </div>
+             </div>
+          )}
+
           {/* TAB: MEMBER HELPDESK & ADMIN SUPPORT */}
           {(activeTab === 'support' || activeTab === 'admin_support') && (
              <div className="animate-fadeIn space-y-10">
@@ -1968,7 +2107,7 @@ export default function App() {
                       <h3 className="font-black text-lg text-slate-800">Buat Tiket Baru</h3>
                       <input type="text" placeholder="Subjek / Kendala Singkat" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
                       <textarea placeholder="Jelaskan detail kendala Anda..." rows="4" value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm resize-none" required></textarea>
-                      <button type="submit" className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"><Send size={18} /> KIRIM TIKET</button>
+                      <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-50"><Send size={18} /> KIRIM TIKET</button>
                    </form>
                 )}
                 <div className="space-y-6 mt-8">
@@ -1983,17 +2122,17 @@ export default function App() {
                                <h4 className="font-black text-xl text-slate-900">{t.subject}</h4>
                                <p className="text-xs font-bold text-slate-400 mt-1">Dari: {t.userName} • {new Date(t.createdAt).toLocaleDateString()}</p>
                             </div>
-                            <p className="text-sm text-slate-700 bg-slate-50 p-5 rounded-xl border border-slate-100">{t.message}</p>
+                            <p className="text-sm text-slate-700 bg-slate-50 p-5 rounded-xl border border-slate-100" dangerouslySetInnerHTML={{__html: t.message}}></p>
                             {t.status === 'open' && isAdmin && (
                                <form onSubmit={(e) => { e.preventDefault(); handleAdminReplyTicket(t.id, e.target.reply.value); }} className="mt-6 flex gap-3">
                                   <input name="reply" type="text" placeholder="Tulis solusi untuk member..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none font-bold text-sm" required />
-                                  <button type="submit" className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-700">BALAS</button>
+                                  <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-700 disabled:opacity-50">BALAS</button>
                                </form>
                             )}
                             {t.adminReply && (
                                <div className="mt-6 bg-emerald-50 border border-emerald-100 p-5 rounded-xl">
                                   <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Balasan Admin:</p>
-                                  <p className="text-sm font-bold text-emerald-900">{t.adminReply}</p>
+                                  <p className="text-sm font-bold text-emerald-900" dangerouslySetInnerHTML={{__html: t.adminReply}}></p>
                                </div>
                             )}
                          </div>
@@ -2020,7 +2159,7 @@ export default function App() {
                            <input type="text" placeholder="No Rekening" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border outline-none font-bold text-sm" value={profileForm.accountNo} onChange={e=>setProfileForm({...profileForm, accountNo: e.target.value})} />
                         </div>
                      </div>
-                     <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-indigo-600 transition-all mt-4">SIMPAN PERUBAHAN</button>
+                     <button type="submit" disabled={isProcessingAction.current} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-indigo-600 transition-all mt-4 disabled:opacity-50">SIMPAN PERUBAHAN</button>
                   </form>
                </div>
             </div>
@@ -2057,7 +2196,7 @@ export default function App() {
                           {[0,1,2,3].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}
                       </select>
                   </div>
-                  <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 rounded-xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 mt-4"><Save size={18} /> UPDATE DATA MEMBER</button>
+                  <button type="submit" disabled={isProcessingAction.current} className="w-full bg-slate-900 text-white font-black py-4 rounded-xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50"><Save size={18} /> UPDATE DATA MEMBER</button>
                </form>
             </div>
          </div>
@@ -2078,7 +2217,7 @@ export default function App() {
               <form onSubmit={handlePurchaseRequest} className="space-y-4">
                  <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
                  <input type="text" placeholder="Bank Asal" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
-                 <button type="submit" className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-emerald-600 transition-all uppercase tracking-widest text-xs">Konfirmasi & Upgrade</button>
+                 <button type="submit" disabled={isProcessingAction.current} className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-emerald-600 transition-all uppercase tracking-widest text-xs disabled:opacity-50">Konfirmasi & Upgrade</button>
               </form>
            </div>
         </div>
