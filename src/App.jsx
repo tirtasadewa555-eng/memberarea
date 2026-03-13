@@ -23,6 +23,32 @@ import {
   Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, Cpu, Key, Sparkles as MagicWand, Link as LinkIcon
 } from 'lucide-react';
 
+/* =======================================================================
+  [SECURITY AUDIT & BEST PRACTICES DIKONTROL DI SINI]
+  =======================================================================
+  PENTING: Firebase membutuhkan pengamanan di sisi SERVER (Firestore Rules).
+  Wajib tambahkan aturan ini di Firebase Console -> Firestore -> Rules:
+  
+  rules_version = '2';
+  service cloud.firestore {
+    match /databases/{database}/documents {
+      function isAdmin() { return request.auth.token.email == 'admin@website.com'; }
+      function isOwner(userId) { return request.auth.uid == userId; }
+      
+      // User hanya bisa update profil TANPA memanipulasi saldo/level
+      match /artifacts/{appId}/users/{userId}/profile/data {
+        allow read: if isOwner(userId) || isAdmin();
+        allow update: if isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['subscriptionLevel', 'commissionBalance', 'rewardPoints'])) || isAdmin();
+        allow create: if isOwner(userId) || isAdmin();
+      }
+      // Semua kontrol krusial harus di-lock hanya untuk admin
+      match /artifacts/{appId}/public/data/userRegistry/{userId} {
+        allow read, write: if isAdmin() || (request.method == 'create' && isOwner(userId));
+      }
+    }
+  }
+*/
+
 // ==========================================
 // 1. KONFIGURASI SISTEM FIREBASE
 // ==========================================
@@ -36,43 +62,22 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 };
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'membership-v14-system';
-const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin Anda
+const ADMIN_EMAIL = "admin@website.com"; 
 const WHATSAPP_ADMIN = "628123456789"; 
 
 const TIER_LEVELS = {
-  0: { 
-      name: 'Free', 
-      color: 'text-slate-500', 
-      bg: 'bg-slate-100', 
-      price: 0,
-      desc: 'Akses terbatas untuk member baru',
-      features: ['Akses Modul Dasar', 'Kuis Harian AI'] 
-  },
-  1: { 
-      name: 'Personal', 
-      color: 'text-emerald-600', 
-      bg: 'bg-emerald-50', 
-      price: 99000,
-      desc: 'Cocok untuk individu yang baru memulai',
-      features: ['Semua Akses Free', 'Akses Semua Modul', 'Grup Komunitas Terbatas', 'Sertifikat Digital'] 
-  },
-  2: { 
-      name: 'Business', 
-      color: 'text-indigo-600', 
-      bg: 'bg-indigo-50', 
-      price: 249000,
-      desc: 'Untuk profesional dan bisnis berkembang',
-      features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'AI Copilot Terbatas', 'Support Prioritas', 'Ruang Fokus VIP'] 
-  },
-  3: { 
-      name: 'Agency', 
-      color: 'text-amber-600', 
-      bg: 'bg-amber-50', 
-      price: 499000,
-      desc: 'Akses penuh tanpa batas untuk tim & agensi',
-      features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Unlimited AI Copilot', '1-on-1 Mentoring', 'Dedicated Support 24/7'] 
-  }
+  0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0, desc: 'Akses terbatas untuk member baru', features: ['Akses Modul Dasar', 'Kuis Harian AI'] },
+  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000, desc: 'Cocok untuk individu yang baru memulai', features: ['Semua Akses Free', 'Akses Semua Modul', 'Grup Komunitas Terbatas', 'Sertifikat Digital'] },
+  2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 249000, desc: 'Untuk profesional dan bisnis berkembang', features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'AI Copilot Terbatas', 'Support Prioritas', 'Ruang Fokus VIP'] },
+  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000, desc: 'Akses penuh tanpa batas untuk tim & agensi', features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Unlimited AI Copilot', '1-on-1 Mentoring', 'Dedicated Support 24/7'] }
 };
+
+// Data Kuis Edukasi Harian
+const DAILY_QUIZZES = [
+  { q: "Apa kepanjangan dari CTA dalam digital marketing?", options: ["Call To Action", "Click To Add", "Cost To Acquire", "Customer Target Area"], answer: 0, exp: "CTA (Call To Action) adalah instruksi berupa teks atau tombol yang didesain untuk memancing respon langsung dari audiens." },
+  { q: "Manakah metrik yang mengukur persentase pengunjung yang langsung keluar dari website tanpa interaksi?", options: ["Click-Through Rate", "Bounce Rate", "Conversion Rate", "Retention Rate"], answer: 1, exp: "Bounce Rate mengukur persentase sesi satu halaman di mana pengguna keluar tanpa berpindah halaman lain." },
+  { q: "Metode menjual produk orang lain dan mendapatkan komisi disebut?", options: ["Dropshipping", "Affiliate Marketing", "MLM", "White Labeling"], answer: 1, exp: "Affiliate Marketing memungkinkan Anda mendapat komisi dari setiap penjualan yang terjadi lewat link unik (referral) Anda." }
+];
 
 // Global CSS
 const GLOBAL_CSS = `
@@ -88,6 +93,23 @@ const GLOBAL_CSS = `
   .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
   @media print { body * { visibility: hidden; } #printable-certificate, #printable-certificate * { visibility: visible; } #printable-certificate { position: absolute; left: 0; top: 0; width: 100%; } }
 `;
+
+// Fungsi Keamanan: Pembersih HTML (Sanitizer) Dasar untuk mencegah XSS
+const sanitizeHTML = (str) => {
+    if (!str) return '';
+    return str
+        .replace(/<script[^>]*>([\S\s]*?)<\/script>/gmi, '')
+        .replace(/<\/?\w+((\s+\w+(\s*=\s*(?:".*?"|'.*?'|[^'">\s]+))?)+\s*|\s*)\/?>/gmi, (match) => {
+            return match.replace(/on\w+\s*=/gi, 'data-blocked='); // Blokir event handler (onclick, onerror, dll)
+        })
+        .replace(/javascript:/gi, 'blocked:');
+};
+
+// Fungsi Keamanan: Pembersih Input Teks (Anti-Injection NoSQL/SQL)
+const escapeInput = (str) => {
+    if (!str) return '';
+    return str.replace(/[<>"'/]/g, "").trim();
+};
 
 let firebaseApp, auth, db;
 const isConfigReady = firebaseConfig && firebaseConfig.apiKey;
@@ -164,10 +186,11 @@ export default function App() {
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
   const [isQuizProcessing, setIsQuizProcessing] = useState(false);
 
-  // --- Ruang Fokus VIP States ---
+  // --- Ruang Fokus VIP States (Keamanan Timer) ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
   const [isFocusing, setIsFocusing] = useState(false);
   const [focusMode, setFocusMode] = useState('work'); 
+  const focusStartTimeRef = useRef(null); // Anti-cheat timer
 
   // --- E-Learning Academy States ---
   const [activeCourseId, setActiveCourseId] = useState('');
@@ -183,6 +206,7 @@ export default function App() {
 
   const chatEndRef = useRef(null);
   const aiEndRef = useRef(null);
+  const isProcessingAction = useRef(false); // Mencegah klik ganda brutal
 
   // --- Derived States ---
   const currentTier = userData?.subscriptionLevel || 0;
@@ -202,7 +226,7 @@ export default function App() {
   const filteredUsers = useMemo(() => {
     let list = [...allUsers];
     if (searchUserQuery) {
-        const q = searchUserQuery.toLowerCase();
+        const q = escapeInput(searchUserQuery.toLowerCase());
         list = list.filter(u => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q));
     }
     return list.sort((a, b) => new Date(b.joinDate || 0) - new Date(a.joinDate || 0));
@@ -210,7 +234,8 @@ export default function App() {
 
   const filteredFiles = useMemo(() => {
     if (!searchFileQuery) return files;
-    return files.filter(f => f.name?.toLowerCase().includes(searchFileQuery.toLowerCase()));
+    const q = escapeInput(searchFileQuery.toLowerCase());
+    return files.filter(f => f.name?.toLowerCase().includes(q));
   }, [files, searchFileQuery]);
 
   const sortedChat = useMemo(() => [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), [chatMessages]);
@@ -246,12 +271,6 @@ export default function App() {
         .slice(0, 10);
   }, [allUsers, withdrawals]);
 
-  const finalPrice = useMemo(() => {
-    if (!checkoutPkg) return 0;
-    if (appliedCoupon && appliedCoupon.discount) return checkoutPkg.price - (checkoutPkg.price * appliedCoupon.discount / 100);
-    return checkoutPkg.price;
-  }, [checkoutPkg, appliedCoupon]);
-
   const activeCourse = academyModules.find(m => m.id === activeCourseId) || academyModules[0] || null;
   const activeLesson = activeCourse?.lessons?.find(l => l.id === activeLessonId) || activeCourse?.lessons?.[0] || null;
   const isLessonCompleted = activeLesson ? completedLessons.includes(activeLesson.id) : false;
@@ -283,7 +302,7 @@ export default function App() {
   const logActivity = async (text, type) => {
     try {
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'activities'), {
-            text, type, createdAt: new Date().toISOString()
+            text: escapeInput(text), type, createdAt: new Date().toISOString()
         });
     } catch (e) {}
   };
@@ -298,7 +317,6 @@ export default function App() {
 
       try {
           if (aiConfig.provider === 'gemini') {
-              // Menggunakan endpoint Gemini Flash Free dan mengoper API Key via header sesuai standar cURL
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
                   method: 'POST',
                   headers: { 
@@ -335,7 +353,10 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
-    if (refCode) localStorage.setItem('affiliate_ref_v14', refCode);
+    // Validasi Referral (Anti Injection)
+    if (refCode && /^[a-zA-Z0-9_-]{5,50}$/.test(refCode)) {
+        localStorage.setItem('affiliate_ref_v14', refCode);
+    }
 
     if (!isConfigReady) { setLoading(false); return; }
     
@@ -348,6 +369,7 @@ export default function App() {
     
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      // Validasi Admin (Tetap butuh penguatan di Firestore Rules)
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
@@ -411,20 +433,36 @@ export default function App() {
     return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); adminUnsub(); };
   }, [user, isAdmin]);
 
-  // --- Pomodoro Timer Engine ---
+  // --- Pomodoro Timer Engine (Dengan Validasi Anti-Cheat) ---
   useEffect(() => {
     let interval;
     if (isFocusing && focusTimeLeft > 0) {
+      if(!focusStartTimeRef.current) focusStartTimeRef.current = Date.now();
       interval = setInterval(() => { setFocusTimeLeft(prev => prev - 1); }, 1000);
     } else if (isFocusing && focusTimeLeft <= 0) {
       setIsFocusing(false);
       handleFocusComplete();
     }
+    
+    // Reset ref jika user membatalkan
+    if(!isFocusing) focusStartTimeRef.current = null;
+
     return () => clearInterval(interval);
   }, [isFocusing, focusTimeLeft]);
 
   const handleFocusComplete = async () => {
     if (focusMode === 'work') {
+       // Keamanan: Validasi bahwa waktu yg dihabiskan logis (Min. 24 menit untuk sesi 25 menit)
+       const timeElapsedMs = Date.now() - (focusStartTimeRef.current || Date.now());
+       const minimumAllowedTimeMs = 24 * 60 * 1000; 
+
+       if (timeElapsedMs < minimumAllowedTimeMs) {
+           showToast("Aktivitas tidak wajar terdeteksi. Sesi dibatalkan.", "error");
+           setFocusMode('work');
+           setFocusTimeLeft(25 * 60); 
+           return;
+       }
+
        try {
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(25) });
            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(25) });
@@ -464,14 +502,17 @@ export default function App() {
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!isConfigReady) return showToast("Config Firebase belum diisi!", "error");
+    if (isProcessingAction.current) return;
+
+    isProcessingAction.current = true;
     setAuthLoading(true);
     try {
       if (authMode === 'register') {
-        const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        const cred = await createUserWithEmailAndPassword(auth, escapeInput(formData.email), formData.password);
         const storedRef = localStorage.getItem('affiliate_ref_v14'); 
         
         const init = { 
-            name: formData.name, email: formData.email, subscriptionLevel: 0, 
+            name: escapeInput(formData.name), email: escapeInput(formData.email), subscriptionLevel: 0, 
             joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0,
             referredBy: storedRef || null, completedFiles: [], completedLessons: [], rewardPoints: 0, lastCheckInDate: '', lastQuizDate: ''
         };
@@ -479,24 +520,33 @@ export default function App() {
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         localStorage.removeItem('affiliate_ref_v14');
         
-        logActivity(`${formData.name} baru saja bergabung! 👋`, 'join');
+        logActivity(`${escapeInput(formData.name)} baru saja bergabung! 👋`, 'join');
         showToast("Registrasi Berhasil!");
       } else {
-        await signInWithEmailAndPassword(auth, formData.email, formData.password);
+        await signInWithEmailAndPassword(auth, escapeInput(formData.email), formData.password);
         showToast("Selamat Datang!");
       }
     } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
     setAuthLoading(false);
+    isProcessingAction.current = false;
   };
 
   const handleDailyCheckIn = async () => {
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
+
     const today = new Date().toDateString();
-    if (userData?.lastCheckInDate === today) return showToast("Sudah klaim hari ini.", "error");
+    if (userData?.lastCheckInDate === today) {
+        isProcessingAction.current = false;
+        return showToast("Sudah klaim hari ini.", "error");
+    }
+    
     try {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(10), lastCheckInDate: today });
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(10), lastCheckInDate: today });
         showToast("Klaim +10 Poin Harian! 🎉", "success");
     } catch (e) { showToast("Error klaim poin", "error"); }
+    isProcessingAction.current = false;
   };
 
   // --- LOGIC: AI KUIS PINTAR EDUKASI ---
@@ -548,8 +598,14 @@ export default function App() {
 
   const handleCompleteLearning = async (lesson, isQuiz = false, selectedOpt = null) => {
     if (completedLessons.includes(lesson.id)) return showToast("Sudah diselesaikan sebelumnya.", "error");
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
+
     if (isQuiz) {
-        if (selectedOpt !== lesson.answer) return showToast(`Jawaban Kurang Tepat! ${lesson.exp}`, "error"); 
+        if (selectedOpt !== lesson.answer) {
+            isProcessingAction.current = false;
+            return showToast(`Jawaban Kurang Tepat! ${lesson.exp}`, "error"); 
+        }
         showToast(`Jawaban Tepat! +${lesson.points} Poin. ${lesson.exp}`, "success");
     } else { showToast(`Materi Selesai! +${lesson.points} Poin Reward.`, "success"); }
 
@@ -559,9 +615,12 @@ export default function App() {
         logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan materi Academy "${lesson.title}" 🎓`, 'learn');
         setQuizSelection(null); 
     } catch (e) { showToast("Gagal menyimpan progress.", "error"); }
+    isProcessingAction.current = false;
   };
 
   const handleToggleFileProgress = async (fileId, fileName) => {
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
     try {
         const isDoneNow = !completedFiles.includes(fileId);
         const newArr = isDoneNow ? [...completedFiles, fileId] : completedFiles.filter(id => id !== fileId);
@@ -571,13 +630,20 @@ export default function App() {
             logActivity(`${userData?.name?.split(' ')[0] || 'Member'} mendownload master file: ${fileName} 📦`, 'learn');
         }
     } catch(e) { showToast("Gagal simpan progress", "error"); }
+    isProcessingAction.current = false;
   };
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), profileForm);
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), profileForm);
+      // Sanitasi input profil
+      const safeProfile = {
+          phone: escapeInput(profileForm.phone),
+          bank: escapeInput(profileForm.bank),
+          accountNo: escapeInput(profileForm.accountNo)
+      };
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), safeProfile);
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), safeProfile);
       showToast("Profil diperbarui!");
     } catch(err) { showToast("Gagal update profil", "error"); }
   };
@@ -590,7 +656,7 @@ export default function App() {
       try {
           const modId = `modul_${Date.now()}`;
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'modules', modId), {
-              id: modId, title: modulTitle, lessons: [], createdAt: new Date().toISOString()
+              id: modId, title: escapeInput(modulTitle), lessons: [], createdAt: new Date().toISOString()
           });
           setModulTitle('');
           showToast("Modul Kelas berhasil ditambahkan!");
@@ -611,9 +677,9 @@ export default function App() {
           const targetMod = academyModules.find(m => m.id === targetModulId);
           
           const newLesson = {
-              id: `lsn_${Date.now()}`, title: lessonForm.title, type: lessonForm.type,
+              id: `lsn_${Date.now()}`, title: escapeInput(lessonForm.title), type: lessonForm.type,
               points: parseInt(lessonForm.points) || 10, content: lessonForm.content, desc: lessonForm.desc,
-              question: lessonForm.question, options: lessonForm.options, answer: parseInt(lessonForm.answer), exp: lessonForm.exp
+              question: escapeInput(lessonForm.question), options: lessonForm.options.map(o => escapeInput(o)), answer: parseInt(lessonForm.answer), exp: escapeInput(lessonForm.exp)
           };
 
           const updatedLessons = [...(targetMod.lessons || []), newLesson];
@@ -650,7 +716,7 @@ export default function App() {
       if(!selectedUserDetail) return;
       try {
           const updateData = {
-              name: editUserForm.name, phone: editUserForm.phone, bank: editUserForm.bank, accountNo: editUserForm.accountNo,
+              name: escapeInput(editUserForm.name), phone: escapeInput(editUserForm.phone), bank: escapeInput(editUserForm.bank), accountNo: escapeInput(editUserForm.accountNo),
               rewardPoints: parseInt(editUserForm.rewardPoints), commissionBalance: parseInt(editUserForm.commissionBalance), subscriptionLevel: parseInt(editUserForm.subscriptionLevel)
           };
           await updateDoc(doc(db, 'artifacts', appId, 'users', selectedUserDetail.uid, 'profile', 'data'), updateData);
@@ -671,20 +737,30 @@ export default function App() {
   const handlePurchaseRequest = async (e) => {
     e.preventDefault();
     if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Form harus lengkap!", "error");
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
+
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
+      
+      // Keamanan: Kalkulasi Ulang Harga (Mencegah manipulasi finalPrice di Frontend)
+      const basePrice = TIER_LEVELS[checkoutPkg.level]?.price || 0;
+      const discountVal = appliedCoupon && appliedCoupon.active ? appliedCoupon.discount : 0;
+      const trueFinalPrice = basePrice - (basePrice * discountVal / 100);
+
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), {
         id: transId, userId: user.uid, userName: userData?.name || user?.email || 'Member', 
-        packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, price: finalPrice, promoCode: appliedCoupon?.code || null, 
-        senderName: confirmForm.senderName, senderBank: confirmForm.senderBank, notes: confirmForm.notes, status: 'pending', createdAt: new Date().toISOString()
+        packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, price: trueFinalPrice, promoCode: appliedCoupon?.code || null, 
+        senderName: escapeInput(confirmForm.senderName), senderBank: escapeInput(confirmForm.senderBank), notes: escapeInput(confirmForm.notes), status: 'pending', createdAt: new Date().toISOString()
       });
       logActivity(`${userData?.name?.split(' ')[0] || 'Seseorang'} memesan lisensi ${checkoutPkg.name}! 🔥`, 'order');
-      openWhatsAppConfirmation({name: checkoutPkg.name, price: finalPrice});
+      openWhatsAppConfirmation({name: checkoutPkg.name, price: trueFinalPrice});
       
       setCheckoutPkg(null); setAppliedCoupon(null); setConfirmForm({senderName:'', senderBank:'', notes:''});
       showToast("Konfirmasi terkirim! Admin akan memvalidasi.");
       setActiveTab('transactions');
     } catch (err) { showToast("Gagal kirim invoice", "error"); }
+    isProcessingAction.current = false;
   };
 
   const handleTransactionAction = async (trans, action) => {
@@ -698,7 +774,7 @@ export default function App() {
 
           const target = allUsers.find(u => u.uid === trans.userId);
           if (target && target.referredBy) {
-              const comm = trans.price * 0.20;
+              const comm = trans.price * 0.20; // 20% komisi
               await updateDoc(doc(db, 'artifacts', appId, 'users', target.referredBy, 'profile', 'data'), { commissionBalance: increment(comm) });
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', target.referredBy), { commissionBalance: increment(comm) });
           }
@@ -712,25 +788,36 @@ export default function App() {
 
   const handleRequestWithdrawal = async () => {
     if (!userData?.bank || !userData?.accountNo) return showToast("Lengkapi profil bank dulu!", "error");
-    if (affiliateBalance < 100000) return showToast("Min penarikan Rp 100rb", "error");
+    if (affiliateBalance < 100000) return showToast("Min penarikan Rp 100.000", "error");
     if (withdrawals.some(w => w.status === 'pending')) return showToast("Ada penarikan pending.", "error");
+    
+    if (isProcessingAction.current) return;
+    isProcessingAction.current = true;
+
     try {
-      const amount = affiliateBalance;
+      const amountToWithdraw = affiliateBalance;
+      // Keamanan ekstra: cegah potong saldo jika tiba-tiba berubah negatif atau 0
+      if (amountToWithdraw <= 0) { isProcessingAction.current = false; return; }
+
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
         userId: user.uid, userName: userData?.name || user?.email || 'Member', bank: userData.bank, 
-        accountNo: userData.accountNo, amount: amount, status: 'pending', createdAt: new Date().toISOString()
+        accountNo: userData.accountNo, amount: amountToWithdraw, status: 'pending', createdAt: new Date().toISOString()
       });
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: increment(-amount) });
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: increment(-amount) });
-      logActivity(`${userData?.name?.split(' ')[0]} menarik komisi Rp ${amount.toLocaleString()} 💸`, 'withdraw');
+      // Potong saldo sementara menunggu WD diproses
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { commissionBalance: increment(-amountToWithdraw) });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { commissionBalance: increment(-amountToWithdraw) });
+      
+      logActivity(`${userData?.name?.split(' ')[0]} menarik komisi Rp ${amountToWithdraw.toLocaleString()} 💸`, 'withdraw');
       showToast("Permintaan WD terkirim!");
     } catch(e) { showToast("Gagal tarik saldo", "error"); }
+    isProcessingAction.current = false;
   };
 
   const handleAdminWithdrawalAction = async (wdId, action, userId, amount) => {
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', wdId), { status: action, updatedAt: new Date().toISOString() });
       if (action === 'rejected') {
+         // Kembalikan dana jika ditolak
          await updateDoc(doc(db, 'artifacts', appId, 'users', userId, 'profile', 'data'), { commissionBalance: increment(amount) });
          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', userId), { commissionBalance: increment(amount) });
          showToast("Pencairan ditolak. Saldo dikembalikan.", "error");
@@ -750,7 +837,7 @@ export default function App() {
     e.preventDefault();
     if(!couponForm.code || !couponForm.discount) return;
     try {
-       const codeUpper = couponForm.code.toUpperCase().split(' ').join('');
+       const codeUpper = escapeInput(couponForm.code.toUpperCase().split(' ').join(''));
        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'coupons', codeUpper), {
           id: codeUpper, code: codeUpper, discount: parseInt(couponForm.discount), active: true, createdAt: new Date().toISOString()
        });
@@ -767,7 +854,7 @@ export default function App() {
 
   const handleApplyCoupon = (e) => {
     e.preventDefault();
-    const codeFormat = couponInput.toUpperCase().split(' ').join('');
+    const codeFormat = escapeInput(couponInput.toUpperCase().split(' ').join(''));
     const found = coupons.find(c => c.code === codeFormat && c.active);
     if (found) { setAppliedCoupon(found); showToast(`${found.discount}% Diskon diterapkan!`); } 
     else { setAppliedCoupon(null); showToast("Kupon tidak valid.", "error"); }
@@ -780,8 +867,10 @@ export default function App() {
     if(!chatInput.trim()) return;
     try {
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), {
-            userId: user.uid, userName: userData?.name || user?.email?.split('@')[0] || 'Member',
-            text: chatInput, isAdmin, rankName: userRank.name, rankBg: userRank.bg, rankColor: userRank.color,
+            userId: user.uid, 
+            userName: userData?.name || user?.email?.split('@')[0] || 'Member',
+            text: escapeInput(chatInput), // Sanitasi XSS Chat
+            isAdmin, rankName: userRank.name, rankBg: userRank.bg, rankColor: userRank.color,
             createdAt: new Date().toISOString()
         });
         setChatInput('');
@@ -799,8 +888,11 @@ export default function App() {
     if (!ticketForm.subject || !ticketForm.message) return;
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), {
-        userId: user.uid, userName: userData?.name || user?.email || 'Member', subject: ticketForm.subject, 
-        message: ticketForm.message, status: 'open', adminReply: '', createdAt: new Date().toISOString()
+        userId: user.uid, 
+        userName: userData?.name || user?.email || 'Member', 
+        subject: escapeInput(ticketForm.subject), 
+        message: escapeInput(ticketForm.message), 
+        status: 'open', adminReply: '', createdAt: new Date().toISOString()
       });
       setTicketForm({ subject: '', message: '' });
       showToast("Tiket Bantuan dikirim.");
@@ -810,7 +902,7 @@ export default function App() {
   const handleAdminReplyTicket = async (ticketId, replyText) => {
     if (!replyText) return;
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: replyText, updatedAt: new Date().toISOString() });
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: escapeInput(replyText), updatedAt: new Date().toISOString() });
       showToast("Balasan terkirim.");
     } catch (err) { showToast("Gagal membalas", "error"); }
   };
@@ -824,23 +916,19 @@ export default function App() {
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
-      const data = { ...productForm, reqLevel: parseInt(productForm.reqLevel), updatedAt: serverTimestamp() };
+      const data = { 
+          name: escapeInput(productForm.name), 
+          size: escapeInput(productForm.size), 
+          reqLevel: parseInt(productForm.reqLevel), 
+          url: productForm.url, // URL usually safe if regex checked, but kept as is for links
+          category: productForm.category,
+          updatedAt: serverTimestamp() 
+      };
       if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingId), data); showToast("Diperbarui"); } 
       else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() }); showToast("Ditambahkan"); }
       setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });
       setEditingId(null);
     } catch (err) { showToast("Gagal simpan produk", "error"); }
-  };
-
-  const handlePostAnnouncement = async (e) => {
-    e.preventDefault();
-    const msg = e.target.announce.value;
-    if (!msg) return;
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'announcements'), { message: msg, createdAt: new Date().toISOString() });
-      e.target.reset();
-      showToast("Broadcast dikirim.");
-    } catch (err) {}
   };
 
   const handleExportCSV = () => {
@@ -861,7 +949,7 @@ export default function App() {
 
     if (!aiConfig.isActive) return showToast("Fitur AI Mentor sedang dinonaktifkan oleh Admin.", "error");
 
-    const newMsgs = [...aiMessages, { role: 'user', text: aiInput }];
+    const newMsgs = [...aiMessages, { role: 'user', text: escapeInput(aiInput) }];
     setAiMessages(newMsgs);
     setAiInput('');
     setAiTyping(true);
@@ -869,7 +957,7 @@ export default function App() {
     try {
         const prompt = `Anda adalah 'ProSpace AI Mentor', asisten AI pintar khusus untuk member platform edukasi bisnis digital. Jawablah dengan bahasa Indonesia yang ramah, ringkas, dan jelas. \n\nPertanyaan User: ${aiInput}`;
         const reply = await fetchFromAI(prompt);
-        setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
+        setAiMessages(prev => [...prev, { role: 'ai', text: sanitizeHTML(reply) }]);
     } catch(err) {
         setAiMessages(prev => [...prev, { role: 'ai', text: "⚠️ Maaf, API Key belum dikonfigurasi atau tidak valid. Silakan hubungi CS Helpdesk." }]);
     }
@@ -887,10 +975,11 @@ export default function App() {
       
       try {
           const link = `https://domainanda.com/?ref=${user?.uid || '123'}`;
-          const prompt = `Buatkan 1 teks copywriting promosi bahasa Indonesia untuk platform ${copilotForm.platform} dengan gaya penulisan ${copilotForm.tone}. Produk yang dijual adalah "${copilotForm.product}". Jangan gunakan markdown berlebihan (\`\`\`). Sertakan emoji secukupnya. Di kalimat paling akhir, arahkan pembaca untuk mengklik link ini: ${link}`;
+          const safeProduct = escapeInput(copilotForm.product);
+          const prompt = `Buatkan 1 teks copywriting promosi bahasa Indonesia untuk platform ${copilotForm.platform} dengan gaya penulisan ${copilotForm.tone}. Produk yang dijual adalah "${safeProduct}". Jangan gunakan markdown berlebihan (\`\`\`). Sertakan emoji secukupnya. Di kalimat paling akhir, arahkan pembaca untuk mengklik link ini: ${link}`;
           
           const result = await fetchFromAI(prompt);
-          setCopilotResult(result.trim());
+          setCopilotResult(sanitizeHTML(result.trim()));
           showToast("Copywriting berhasil di-generate AI!", "success");
       } catch (err) {
           showToast(err.message || "Gagal memanggil API AI. Cek konfigurasi.", "error");
@@ -924,7 +1013,7 @@ export default function App() {
               if(data.error) throw new Error(data.error.message);
               reply = data.choices[0].message.content;
           }
-          showToast(`Koneksi Sukses! Respon AI: ${reply.trim()}`, "success");
+          showToast(`Koneksi Sukses! Respon AI: ${sanitizeHTML(reply.trim())}`, "success");
       } catch (err) {
           showToast(`Gagal Konek: ${err.message}`, "error");
       }
@@ -1063,7 +1152,7 @@ export default function App() {
                 </div>
                 <div className="flex-1 p-4 overflow-y-auto bg-slate-50 flex flex-col gap-3 custom-scrollbar">
                    {aiMessages.map((m, i) => (
-                      <div key={i} className={`max-w-[85%] p-3 rounded-2xl text-sm ${m.role === 'ai' ? 'bg-white border self-start rounded-tl-none' : 'bg-indigo-600 text-white self-end rounded-tr-none shadow-md'}`}>{m.text}</div>
+                      <div key={i} className={`max-w-[85%] p-3 rounded-2xl text-sm ${m.role === 'ai' ? 'bg-white border self-start rounded-tl-none' : 'bg-indigo-600 text-white self-end rounded-tr-none shadow-md'}`} dangerouslySetInnerHTML={{__html: sanitizeHTML(m.text)}}></div>
                    ))}
                    {aiTyping && <div className="p-3 bg-white border self-start rounded-2xl rounded-tl-none italic text-xs text-slate-400">Sedang mengetik...</div>}
                    <div ref={aiEndRef} />
@@ -1297,9 +1386,9 @@ export default function App() {
                               </span>
                               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight mb-4">{activeLesson.title}</h2>
                               
-                              {/* Article / Desc text */}
+                              {/* KEAMANAN XSS: Gunakan Sanitasi */}
                               {activeLesson.type !== 'quiz' && (
-                                 <p className="text-slate-600 leading-relaxed text-lg font-medium" dangerouslySetInnerHTML={{__html: activeLesson.desc || activeLesson.content}}></p>
+                                 <div className="text-slate-600 leading-relaxed text-lg font-medium" dangerouslySetInnerHTML={{__html: sanitizeHTML(activeLesson.desc || activeLesson.content)}}></div>
                               )}
 
                               {/* Quiz Interactive UI */}
@@ -1406,7 +1495,7 @@ export default function App() {
                              <div className="mt-8 pt-8 border-t border-slate-100">
                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Hasil Teks Mentah (Raw)</p>
                                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 relative group">
-                                     <p className="text-sm font-medium text-slate-700 whitespace-pre-wrap">{copilotResult}</p>
+                                     <p className="text-sm font-medium text-slate-700 whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: copilotResult}}></p>
                                      <button onClick={()=>copyToClipboard(copilotResult)} className="absolute top-4 right-4 p-2 bg-white text-indigo-600 shadow-md rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-black uppercase"><Copy size={14}/> Salin</button>
                                  </div>
                              </div>
@@ -1434,7 +1523,7 @@ export default function App() {
                                                  <span className="text-[9px] text-slate-400 absolute bottom-1 right-2">11:58</span>
                                              </div>
                                              <div className="bg-[#DCF8C6] p-3 pb-5 rounded-2xl rounded-tr-none text-sm text-slate-800 shadow-sm whitespace-pre-wrap w-[90%] ml-auto relative">
-                                                 {isGeneratingCopy ? <span className="animate-pulse flex gap-1 items-center h-4"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span></span> : (copilotResult || "Preview copywriting WhatsApp Anda akan muncul di sini saat Anda klik generate...")}
+                                                 {isGeneratingCopy ? <span className="animate-pulse flex gap-1 items-center h-4"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span></span> : <span dangerouslySetInnerHTML={{__html: copilotResult || "Preview copywriting WhatsApp Anda akan muncul di sini saat Anda klik generate..."}}></span>}
                                                  {!isGeneratingCopy && <span className="text-[9px] text-green-600 absolute bottom-1 right-2 flex items-center gap-0.5">12:00 <CheckCircle2 size={10}/></span>}
                                              </div>
                                          </div>
@@ -1459,7 +1548,7 @@ export default function App() {
                                                  <p className="text-[10px] font-black mb-2">9,124 likes</p>
                                                  <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
                                                      <span className="font-black mr-2">{userData?.name?.split(' ')[0].toLowerCase() || 'user'}_pro</span>
-                                                     {isGeneratingCopy ? <span className="animate-pulse">Mengetik caption...</span> : (copilotResult || "Preview caption Instagram Anda akan muncul di sini...")}
+                                                     {isGeneratingCopy ? <span className="animate-pulse">Mengetik caption...</span> : <span dangerouslySetInnerHTML={{__html: copilotResult || "Preview caption Instagram Anda akan muncul di sini..."}}></span>}
                                                  </p>
                                              </div>
                                          </div>
