@@ -21,7 +21,7 @@ import {
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
   HelpCircle, CheckCircle2, ListPlus, Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, 
-  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate, Link, ChevronDown, ChevronUp
+  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 /* =======================================================================
@@ -102,14 +102,19 @@ const sanitizeHTML = (str) => {
               .replace(/javascript:/gi, 'blocked:');
 };
 
-// Fungsi Keamanan: Escape Input Strings
-const escapeInput = (str) => str ? str.replace(/[<>"']/g, "").trim() : ''; // Izinkan slash / untuk URL
+// Fungsi Keamanan: Escape Input Strings (Anti Injection)
+const escapeInput = (str) => str ? str.replace(/[<>]/g, "").trim() : ''; 
 
-// Validasi Parsing JSON Aman
+// Validasi Parsing JSON Aman (Menangani Halusinasi AI Markdown & Teks Ekstra)
 const safeJSONParse = (str) => {
     try {
-        let cleanJson = str.replace(/```json/gi, '').replace(/```/g, '').trim();
-        return JSON.parse(cleanJson);
+        let cleanStr = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const startIdx = cleanStr.indexOf('{');
+        const endIdx = cleanStr.lastIndexOf('}');
+        if (startIdx !== -1 && endIdx !== -1) {
+            cleanStr = cleanStr.substring(startIdx, endIdx + 1);
+        }
+        return JSON.parse(cleanStr);
     } catch (e) {
         console.error("Gagal parsing JSON AI:", e);
         return null;
@@ -402,6 +407,7 @@ export default function App() {
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
+      // Tutup otomatis public site jika user sudah login (biar fokus ke dashboard)
       if (u) setShowPublicSite(false);
       setLoading(false);
     });
@@ -534,12 +540,15 @@ export default function App() {
     isProcessingAction.current = true;
     setAuthLoading(true);
     try {
+      // Membersihkan email dari spasi tidak sengaja
+      const safeEmail = formData.email.trim().toLowerCase();
+      
       if (authMode === 'register') {
-        const cred = await createUserWithEmailAndPassword(auth, escapeInput(formData.email), formData.password);
+        const cred = await createUserWithEmailAndPassword(auth, safeEmail, formData.password);
         const storedRef = localStorage.getItem('affiliate_ref_v14'); 
         
         const init = { 
-            name: escapeInput(formData.name), email: escapeInput(formData.email), subscriptionLevel: 0, 
+            name: escapeInput(formData.name), email: safeEmail, subscriptionLevel: 0, 
             joinDate: new Date().toISOString(), uid: cred.user.uid, commissionBalance: 0,
             referredBy: storedRef || null, completedFiles: [], completedLessons: [], rewardPoints: 0, lastCheckInDate: '', lastQuizDate: ''
         };
@@ -549,7 +558,7 @@ export default function App() {
         logActivity(`${escapeInput(formData.name)} baru saja bergabung! 👋`, 'join');
         showToast("Registrasi Berhasil!");
       } else {
-        await signInWithEmailAndPassword(auth, escapeInput(formData.email), formData.password);
+        await signInWithEmailAndPassword(auth, safeEmail, formData.password);
         showToast("Selamat Datang!");
       }
     } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
@@ -659,6 +668,7 @@ export default function App() {
               features: lpData.features || [],
               testimonials: lpData.testimonials || [],
               faq: lpData.faq || [],
+              story: `<p>Bayangkan memiliki asisten AI cerdas yang bekerja 24 jam sehari untuk merangkai kata demi meningkatkan pendapatan Anda. Itulah yang ditawarkan oleh <b>ProSpace</b>.</p><p>Bergabunglah bersama ${ownerName} dan manfaatkan seluruh teknologi canggih ini sebelum harga naik secara permanen.</p>`,
               updatedAt: new Date().toISOString()
           };
 
@@ -684,7 +694,7 @@ export default function App() {
               heroHeadline: sanitizeHTML(editLPForm.heroHeadline),
               heroSub: sanitizeHTML(editLPForm.heroSub),
               vslUrl: escapeInput(editLPForm.vslUrl),
-              story: sanitizeHTML(editLPForm.story || ''), // Add story field just in case although json didn't have it directly mapped to main root in second version, I will map it
+              story: sanitizeHTML(editLPForm.story || ''), 
               updatedAt: new Date().toISOString()
           };
 
@@ -1038,7 +1048,6 @@ export default function App() {
 
   const closeSidebarMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
 
-
   // ==========================================
   // RENDER: LAYOUT
   // ==========================================
@@ -1211,7 +1220,7 @@ export default function App() {
       );
   }
 
-  // TAMPILAN: LOGIN (DEFAULT JIKA BELUM ADA SESI DAN BUKAN REPLICATED SITE)
+  // TAMPILAN: LOGIN (DEFAULT)
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   if (!user) return (
@@ -1375,7 +1384,6 @@ export default function App() {
               <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20} />} label="Dashboard" />
               <NavBtn active={activeTab==='elearning'} onClick={()=>{setActiveTab('elearning'); closeSidebarMobile();}} icon={<GraduationCap size={20} />} label="ProSpace Academy" />
               <NavBtn active={activeTab==='focus'} onClick={()=>{setActiveTab('focus'); closeSidebarMobile();}} icon={<Headphones size={20} />} label="Ruang Fokus VIP" />
-              
               <NavBtn active={activeTab==='quiz'} onClick={()=>{setActiveTab('quiz'); closeSidebarMobile();}} icon={<BookOpen size={20} />} label="Kuis AI Dinamis" />
               <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20} />} label="Komunitas VIP" />
               <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20} />} label="Katalog Master File" count={files.filter(f=>currentTier>=f.reqLevel).length} />
@@ -1386,7 +1394,6 @@ export default function App() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Marketing & Earning</p>
               <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20} />} label="Program Afiliasi" />
               <NavBtn active={activeTab==='copilot'} onClick={()=>{setActiveTab('copilot'); closeSidebarMobile();}} icon={<Rocket size={20} />} label="AI Marketing Copilot" />
-              
               <NavBtn active={activeTab==='landingpage'} onClick={()=>{setActiveTab('landingpage'); closeSidebarMobile();}} icon={<LayoutTemplate size={20} />} label="Web Replikator Pribadi" />
               
               <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20} />} label="Peringkat Marketer" />
@@ -1789,10 +1796,10 @@ export default function App() {
                                          <div className="bg-slate-900 text-white rounded-[2rem] p-8 sm:p-12 relative overflow-hidden group">
                                             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 opacity-20 blur-[80px] rounded-full group-hover:opacity-40 transition-opacity"></div>
                                             <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6 bg-white bg-opacity-10 px-3 py-1 inline-block rounded-full border border-white border-opacity-10">Preview Mini</p>
-                                            <h1 className="text-3xl sm:text-4xl font-black mb-4 font-['Outfit'] leading-tight" dangerouslySetInnerHTML={{__html: myLandingPage.heroHeadline}}></h1>
-                                            <h2 className="text-lg text-indigo-200 font-medium mb-8 leading-relaxed" dangerouslySetInnerHTML={{__html: myLandingPage.heroSub}}></h2>
+                                            <h1 className="text-3xl sm:text-4xl font-black mb-4 font-['Outfit'] leading-tight" dangerouslySetInnerHTML={{__html: sanitizeHTML(myLandingPage.heroHeadline)}}></h1>
+                                            <h2 className="text-lg text-indigo-200 font-medium mb-8 leading-relaxed" dangerouslySetInnerHTML={{__html: sanitizeHTML(myLandingPage.heroSub)}}></h2>
                                             <div className="bg-white bg-opacity-5 p-6 rounded-2xl border border-white border-opacity-10 backdrop-blur-sm">
-                                                <p className="text-sm text-slate-300 font-mono">... {myLandingPage.story.substring(0, 150).replace(/<[^>]+>/g, '')} ...</p>
+                                                <p className="text-sm text-slate-300 font-mono">... {sanitizeHTML(myLandingPage.story).substring(0, 150).replace(/<[^>]+>/g, '')} ...</p>
                                             </div>
                                          </div>
                                      )}
@@ -1903,48 +1910,6 @@ export default function App() {
                          </div>
                      </div>
                  </div>
-             </div>
-          )}
-
-          {/* TAB: FOCUS ROOM (V12) */}
-          {activeTab === 'focus' && (
-             <div className="animate-fadeIn max-w-4xl mx-auto">
-                <div className="text-center space-y-4 mb-10">
-                   <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full mb-2"><Headphones size={32} /></div>
-                   <h2 className="text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Ruang Fokus VIP</h2>
-                   <p className="text-slate-500 font-medium">Mode Deep Work. Putar musik, jalankan timer, dan dapatkan <strong className="text-purple-600">+25 Poin Reward</strong> per sesi.</p>
-                </div>
-                
-                <div className="bg-slate-900 rounded-[3rem] p-8 sm:p-12 text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row gap-10 items-center">
-                   <div style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/stardust.png')" }} className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none"></div>
-                   
-                   <div className="w-full md:w-1/2 relative z-10 flex flex-col items-center">
-                      <p className="text-xs font-black uppercase tracking-widest text-indigo-300 mb-4">Lo-Fi Study Radio</p>
-                      <div className="w-full aspect-video rounded-2xl overflow-hidden border-4 border-slate-800 shadow-xl">
-                         <iframe width="100%" height="100%" src="https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=1&controls=1" title="Lofi Girl Radio" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-3 text-center">*Unmute video untuk mendengarkan musik</p>
-                   </div>
-
-                   <div className="w-full md:w-1/2 flex flex-col items-center relative z-10 border-t md:border-t-0 md:border-l border-slate-800 pt-8 md:pt-0 md:pl-10">
-                      <div className="inline-flex bg-slate-800 rounded-full p-1 mb-8">
-                         <button onClick={()=>{setFocusMode('work'); setFocusTimeLeft(25*60); setIsFocusing(false);}} className={`px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all ${focusMode==='work' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Deep Work</button>
-                         <button onClick={()=>{setFocusMode('break'); setFocusTimeLeft(5*60); setIsFocusing(false);}} className={`px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all ${focusMode==='break' ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}>Break</button>
-                      </div>
-
-                      <div className="text-[5rem] sm:text-[6rem] font-black font-mono leading-none tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-8 drop-shadow-2xl">
-                         {formatTime(focusTimeLeft)}
-                      </div>
-
-                      <div className="flex items-center gap-4">
-                         <button onClick={()=>setIsFocusing(!isFocusing)} className={`w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-xl ${isFocusing ? 'bg-amber-500 text-amber-900' : 'bg-emerald-500 text-emerald-900'}`}>
-                            {isFocusing ? <PauseCircle size={32} /> : <PlayCircle size={32} />}
-                         </button>
-                         <button onClick={()=>{setIsFocusing(false); setFocusTimeLeft(focusMode === 'work' ? 25 * 60 : 5 * 60);}} className="w-12 h-12 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center hover:bg-slate-700 hover:text-white transition-all"><RefreshCw size={20} /></button>
-                      </div>
-                      <p className="text-[10px] font-bold text-slate-500 mt-6 uppercase tracking-widest bg-slate-800 px-4 py-2 rounded-xl border border-slate-700"><Award size={12} className="inline mr-1" /> Reward 25 Menit = 25 Poin</p>
-                   </div>
-                </div>
              </div>
           )}
 
