@@ -21,7 +21,8 @@ import {
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
   HelpCircle, CheckCircle2, ListPlus, Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, 
-  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate, ChevronDown, ChevronUp
+  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate, ChevronDown, ChevronUp,
+  Timer, MonitorPlay, ExternalLink
 } from 'lucide-react';
 
 /* =======================================================================
@@ -48,7 +49,7 @@ import {
         allow write: if isOwner(userId) || isAdmin();
       }
       match /{document=**} {
-        allow read, write: if isAdmin(); // Admin full access
+        allow read, write: if isAdmin() || request.auth != null; // Sesuaikan untuk testing, namun amankan production
       }
     }
   }
@@ -102,10 +103,8 @@ const sanitizeHTML = (str) => {
               .replace(/javascript:/gi, 'blocked:');
 };
 
-// Fungsi Keamanan: Escape Input Strings (Anti Injection)
 const escapeInput = (str) => str ? str.replace(/[<>]/g, "").trim() : ''; 
 
-// Validasi Parsing JSON Aman (Menangani Halusinasi AI Markdown & Teks Ekstra)
 const safeJSONParse = (str) => {
     try {
         let cleanStr = str.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -116,7 +115,6 @@ const safeJSONParse = (str) => {
         }
         return JSON.parse(cleanStr);
     } catch (e) {
-        console.error("Gagal parsing JSON AI:", e);
         return null;
     }
 };
@@ -140,7 +138,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   
-  // --- States Public View (Fitur Baru Replicated Site) ---
+  // --- States Public View ---
   const [publicSiteData, setPublicSiteData] = useState(null);
   const [showPublicSite, setShowPublicSite] = useState(false);
   
@@ -157,8 +155,9 @@ export default function App() {
   const [latestActivity, setLatestActivity] = useState(null);
   const [academyModules, setAcademyModules] = useState([]);
   
-  // Fitur Replicated Site Member State
+  // Fitur Replicated Site
   const [myLandingPage, setMyLandingPage] = useState(null);
+  const [allLandingPages, setAllLandingPages] = useState([]); // FOR ADMIN
   const [isGeneratingLP, setIsGeneratingLP] = useState(false);
   const [editLPForm, setEditLPForm] = useState(null);
   const [isEditingLP, setIsEditingLP] = useState(false);
@@ -168,6 +167,8 @@ export default function App() {
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [checkoutPkg, setCheckoutPkg] = useState(null);
   const [selectedUserDetail, setSelectedUserDetail] = useState(null); 
+  const [selectedTicketDetail, setSelectedTicketDetail] = useState(null);
+  const [replyTicketText, setReplyTicketText] = useState('');
   const [showCertificate, setShowCertificate] = useState(false); 
   
   // --- AI Mentor States ---
@@ -266,6 +267,13 @@ export default function App() {
     return Math.round((count / accessibleFiles.length) * 100);
   }, [accessibleFiles, completedFiles]);
 
+  const activeLesson = useMemo(() => {
+      const mod = academyModules.find(m => m.id === activeCourseId);
+      return mod?.lessons?.find(l => l.id === activeLessonId) || null;
+  }, [academyModules, activeCourseId, activeLessonId]);
+  
+  const isLessonCompleted = activeLesson ? completedLessons.includes(activeLesson.id) : false;
+
   const adminStats = useMemo(() => {
     const approved = transactions.filter(t => t.status === 'approved');
     const totalRev = approved.reduce((acc, curr) => acc + curr.price, 0);
@@ -330,6 +338,18 @@ export default function App() {
     } catch (e) {}
   };
 
+  const handleExportCSV = () => {
+    if(!isAdmin) return;
+    const csvContent = "data:text/csv;charset=utf-8," + "Nama,Email,No WA,Tier,Saldo,Points\n" + allUsers.map(e => `${e.name},${e.email},${e.phone||'-'},${TIER_LEVELS[e.subscriptionLevel]?.name},${e.commissionBalance},${e.rewardPoints}`).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "data_member_prospace.csv");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
   // ==========================================
   // LOGIC: DYNAMIC AI CALL HANDLER
   // ==========================================
@@ -372,7 +392,7 @@ export default function App() {
   };
 
   // ==========================================
-  // LOGIC: INITIAL FETCH & REPLICATED SITE (PUBLIC)
+  // LOGIC: INITIAL FETCH & REPLICATED SITE
   // ==========================================
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
@@ -407,7 +427,6 @@ export default function App() {
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
-      // Tutup otomatis public site jika user sudah login (biar fokus ke dashboard)
       if (u) setShowPublicSite(false);
       setLoading(false);
     });
@@ -415,7 +434,7 @@ export default function App() {
   }, []);
 
   // ==========================================
-  // REAL-TIME SYNC ENGINE (DATA MEMBER)
+  // REAL-TIME SYNC ENGINE (DATA MEMBER & ADMIN)
   // ==========================================
   useEffect(() => {
     if (!user || !isConfigReady) return;
@@ -431,6 +450,8 @@ export default function App() {
         if (d.exists()) {
             setMyLandingPage(d.data());
             if(!isEditingLP) setEditLPForm(d.data()); 
+        } else {
+            setMyLandingPage(null);
         }
     });
 
@@ -458,9 +479,11 @@ export default function App() {
         }
     });
 
-    let adminUnsub = () => {};
+    let adminUnsubRegistry = () => {};
+    let adminUnsubLPs = () => {};
     if (isAdmin) {
-      adminUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+      adminUnsubRegistry = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+      adminUnsubLPs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'replicatedSites'), (s) => setAllLandingPages(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     }
 
     const qTrans = isAdmin ? collection(db, 'artifacts', appId, 'public', 'data', 'transactions') : query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid));
@@ -476,10 +499,10 @@ export default function App() {
         if (d.exists()) setAiConfig(d.data());
     });
 
-    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); unsubMySite(); adminUnsub(); };
+    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); };
   }, [user, isAdmin]);
 
-  // --- Pomodoro Timer Engine ---
+  // --- Pomodoro Timer Engine (Ruang Fokus) ---
   useEffect(() => {
     let interval;
     if (isFocusing && focusTimeLeft > 0) {
@@ -496,8 +519,9 @@ export default function App() {
   const handleFocusComplete = async () => {
     if (focusMode === 'work') {
        const timeElapsedMs = Date.now() - (focusStartTimeRef.current || Date.now());
-       if (timeElapsedMs < 24 * 60 * 1000) {
-           showToast("Aktivitas tidak wajar terdeteksi. Poin sesi dibatalkan.", "error");
+       // Basic anti-cheat
+       if (timeElapsedMs < 24 * 60 * 1000 && focusTimeLeft <= 0) {
+           showToast("Aktivitas tidak wajar terdeteksi.", "error");
            setFocusMode('work'); setFocusTimeLeft(25 * 60); return;
        }
        try {
@@ -540,7 +564,6 @@ export default function App() {
     isProcessingAction.current = true;
     setAuthLoading(true);
     try {
-      // Membersihkan email dari spasi tidak sengaja
       const safeEmail = formData.email.trim().toLowerCase();
       
       if (authMode === 'register') {
@@ -587,7 +610,7 @@ export default function App() {
       if (isGeneratingQuiz) return;
       setIsGeneratingQuiz(true); setAiQuiz(null); setSelectedQuizAnswer(null);
       try {
-          const prompt = `Buatkan 1 soal kuis pilihan ganda yang sangat edukatif tentang digital marketing, bisnis online, affiliate, atau teknologi web. Wajib direturn murni dalam format JSON valid. Struktur: {"q": "pertanyaan", "options": ["A", "B", "C", "D"], "answer": 0_sampai_3, "exp": "penjelasan singkat"}`;
+          const prompt = `Buatkan 1 soal kuis pilihan ganda yang edukatif tentang digital marketing, bisnis online, atau teknologi web. Wajib direturn dalam format JSON murni tanpa backticks markdown. Struktur: {"q": "pertanyaan", "options": ["A", "B", "C", "D"], "answer": 0_sampai_3, "exp": "penjelasan singkat"}`;
           const rawResult = await fetchFromAI(prompt, true);
           const quizData = safeJSONParse(rawResult);
           
@@ -595,7 +618,7 @@ export default function App() {
           
           setAiQuiz(quizData);
           showToast("Kuis baru berhasil dibuat oleh AI!", "success");
-      } catch(e) { showToast("Gagal generate kuis. Periksa API Key / Model.", "error"); }
+      } catch(e) { showToast("Gagal generate kuis. Periksa API Key / Model AI.", "error"); }
       setIsGeneratingQuiz(false);
   };
 
@@ -633,30 +656,20 @@ export default function App() {
 
       try {
           const ownerName = escapeInput(userData?.name) || 'Member';
-          const prompt = `Anda adalah expert copywriter pembuat Landing Page berkonversi tinggi. Buatkan isi website promosi untuk produk digital "ProSpace Membership" yang dimiliki oleh afiliate bernama "${ownerName}". Target audiens: orang awam, karyawan, pebisnis & marketer yang ingin mencari uang tambahan lewat internet. 
-          Berikan HANYA format JSON valid tanpa markdown tambahan: 
+          const prompt = `Anda copywriter pembuat Landing Page. Buatkan isi web promosi untuk produk "ProSpace Membership" milik afiliate "${ownerName}". 
+          HANYA format JSON valid tanpa markdown tambahan: 
           {
             "heroHeadline": "Judul bombastis, memikat, max 10 kata", 
-            "heroSub": "Subjudul yang menjelaskan solusi, max 20 kata", 
+            "heroSub": "Subjudul penjelasan, max 20 kata", 
             "vslUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
-            "features": [
-              {"t": "Nama Fitur 1", "d": "Deskripsi singkat"},
-              {"t": "Nama Fitur 2", "d": "Deskripsi singkat"},
-              {"t": "Nama Fitur 3", "d": "Deskripsi singkat"}
-            ],
-            "testimonials": [
-              {"n": "Budi Santoso", "t": "Komentar positif dan antusias!"},
-              {"n": "Siti Aminah", "t": "Komentar tentang kemudahan penggunaan."}
-            ],
-            "faq": [
-              {"q": "Pertanyaan 1", "a": "Jawaban jelas 1"},
-              {"q": "Pertanyaan 2", "a": "Jawaban jelas 2"}
-            ]
+            "features": [{"t": "Nama Fitur 1", "d": "Desk"}],
+            "testimonials": [{"n": "Nama", "t": "Komentar positif"}],
+            "faq": [{"q": "Tanya 1", "a": "Jawab 1"}]
           }`;
           
           const rawResult = await fetchFromAI(prompt, true);
           const lpData = safeJSONParse(rawResult);
-          if(!lpData || !lpData.heroHeadline) throw new Error("Format AI terpotong atau gagal.");
+          if(!lpData || !lpData.heroHeadline) throw new Error("Format AI gagal.");
 
           const siteData = {
               ownerName: ownerName,
@@ -705,6 +718,28 @@ export default function App() {
           showToast("Gagal menyimpan perubahan.", "error");
       }
       isProcessingAction.current = false;
+  };
+  
+  // ADMIN LP CRUD ACTIONS
+  const handleAdminUpdateLP = async (e, ownerId) => {
+      e.preventDefault();
+      try {
+          let cleanDomain = escapeInput(editLPForm.customDomain).toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', ownerId), {
+              customDomain: cleanDomain,
+              updatedAt: new Date().toISOString()
+          });
+          showToast("Custom Domain Member Berhasil Diupdate (Admin)!");
+          setEditLPForm(null); // Close modal
+      } catch(e) { showToast("Gagal update domain.", "error"); }
+  };
+  
+  const handleAdminDeleteLP = async (ownerId) => {
+      if(!window.confirm("Hapus Landing Page Replikator milik member ini?")) return;
+      try {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', ownerId));
+          showToast("Landing Page berhasil dihapus.");
+      } catch(e) { showToast("Gagal menghapus.", "error");}
   };
 
 
@@ -930,7 +965,7 @@ export default function App() {
     if (found) { setAppliedCoupon(found); showToast(`${found.discount}% Diskon diterapkan!`); } else { setAppliedCoupon(null); showToast("Kupon tidak valid.", "error"); }
   };
 
-  // --- MISC (CHAT, TICKET) ---
+  // --- MISC (CHAT, TICKET, FILES) ---
   const handleSendChat = async (e) => {
     e.preventDefault();
     if(!chatInput.trim() || isProcessingAction.current) return;
@@ -945,6 +980,7 @@ export default function App() {
     if(!window.confirm('Hapus chat?')) return;
     try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'globalChat', id)); } catch(e) {}
   };
+  
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     if (!ticketForm.subject || !ticketForm.message || isProcessingAction.current) return;
@@ -955,27 +991,41 @@ export default function App() {
     } catch (err) {}
     isProcessingAction.current = false;
   };
-  const handleAdminReplyTicket = async (ticketId, replyText) => {
-    if (!replyText || isProcessingAction.current) return;
+  
+  const handleAdminReplyTicket = async (e) => {
+    e.preventDefault();
+    if (!replyTicketText || !selectedTicketDetail || isProcessingAction.current) return;
     isProcessingAction.current = true;
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId), { status: 'answered', adminReply: sanitizeHTML(replyText), updatedAt: new Date().toISOString() }); showToast("Balasan terkirim."); } catch (err) {}
+    try { 
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', selectedTicketDetail.id), { 
+            status: 'answered', adminReply: sanitizeHTML(replyTicketText), updatedAt: new Date().toISOString() 
+        }); 
+        showToast("Balasan terkirim."); 
+        setSelectedTicketDetail(null);
+        setReplyTicketText('');
+    } catch (err) {}
     isProcessingAction.current = false;
   };
   const handleDeleteTicket = async (ticketId) => {
     if(!window.confirm("Hapus tiket ini?")) return;
     try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tickets', ticketId)); showToast("Dihapus."); } catch (err) {}
   }
+
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     if (isProcessingAction.current) return;
     isProcessingAction.current = true;
     try {
       const data = { name: escapeInput(productForm.name), size: escapeInput(productForm.size), reqLevel: parseInt(productForm.reqLevel), url: productForm.url, category: productForm.category, updatedAt: serverTimestamp() };
-      if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingId), data); showToast("Diperbarui"); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() }); showToast("Ditambahkan"); }
+      if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', editingId), data); showToast("File Diperbarui"); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'files'), { ...data, createdAt: serverTimestamp() }); showToast("File Ditambahkan"); }
       setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' }); setEditingId(null);
     } catch (err) {}
     isProcessingAction.current = false;
   };
+  const handleDeleteFile = async (id) => {
+      if(!window.confirm("Hapus file master ini?")) return;
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'files', id)); showToast("Dihapus"); } catch(e){}
+  }
 
   // --- LOGIC: PROSPACE AI MENTOR ---
   const handleAiSubmit = async (e) => {
@@ -1276,8 +1326,8 @@ export default function App() {
     );
   };
 
-  const ProFileCard = ({ file, currentTier, isCompleted, onToggleProgress }) => {
-    const isAccessible = currentTier >= (file.reqLevel || 0);
+  const ProFileCard = ({ file, currentTier, isCompleted, onToggleProgress, isAdminCard }) => {
+    const isAccessible = currentTier >= (file.reqLevel || 0) || isAdminCard;
     return (
       <div className={`bg-white rounded-[2rem] border-2 ${isAccessible ? (isCompleted ? 'border-emerald-300 shadow-lg' : 'border-transparent shadow-lg') : 'border-slate-100 bg-slate-50 bg-opacity-50 opacity-75'} p-6 sm:p-8 transition-all flex flex-col h-full group relative overflow-hidden`}>
         {isAccessible && <div className={`absolute top-0 left-0 w-full h-2 ${isCompleted ? 'bg-emerald-400' : 'bg-gradient-to-r from-indigo-600 to-sky-400'}`}></div>}
@@ -1285,16 +1335,22 @@ export default function App() {
           <div className={`h-14 w-14 rounded-[1.25rem] flex items-center justify-center transition-transform duration-500 shadow-md ${isAccessible ? (isCompleted ? 'bg-emerald-50 text-emerald-500' : 'bg-indigo-50 text-indigo-600 group-hover:scale-110') : 'bg-slate-200 text-slate-400'}`}>
             {file.category === 'Ebook' ? <FileText size={24} /> : file.category === 'Video' ? <Video size={24} /> : <Box size={24} />}
           </div>
-          {isAccessible ? (
+          {isAccessible && !isAdminCard ? (
             <button onClick={onToggleProgress} disabled={isProcessingAction.current} className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1 border transition-colors disabled:opacity-50 ${isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
               {isCompleted ? <CheckSquare size={12} /> : <Square size={12} />} {isCompleted ? 'SELESAI' : 'TANDAI'}
             </button>
-          ) : (
+          ) : !isAdminCard && (
             <div className="bg-white text-rose-500 text-[9px] font-black px-3 py-1.5 rounded-full uppercase border border-rose-100 shadow-sm"><Lock size={12} className="inline mr-1" /> LOCKED</div>
+          )}
+          {isAdminCard && (
+            <div className="flex gap-2">
+                <button onClick={() => { setEditingId(file.id); setProductForm(file); window.scrollTo({top:0, behavior:'smooth'}); }} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Edit3 size={14}/></button>
+                <button onClick={() => handleDeleteFile(file.id)} className="p-2 bg-rose-50 text-rose-600 rounded-lg"><Trash2 size={14}/></button>
+            </div>
           )}
         </div>
         <div className="space-y-2 mb-8 flex-1 relative z-10">
-          <p className="text-[9px] font-black text-indigo-500 uppercase tracking-[2px]">{file.category}</p>
+          <p className="text-[9px] font-black text-indigo-500 uppercase tracking-[2px]">{file.category} • TIER {file.reqLevel}</p>
           <h4 className="text-lg font-black text-slate-900 font-['Outfit'] leading-tight line-clamp-2">{file.name}</h4>
         </div>
         <div className="relative z-10 mt-auto">
@@ -1371,6 +1427,7 @@ export default function App() {
               <NavBtn active={activeTab==='admin_coupons'} onClick={()=>{setActiveTab('admin_coupons'); closeSidebarMobile();}} icon={<Tag size={20} />} label="Kelola Kupon" />
               <NavBtn active={activeTab==='admin_support'} onClick={()=>{setActiveTab('admin_support'); closeSidebarMobile();}} icon={<MessageCircle size={20} />} label="Support Helpdesk" count={adminStats.openTickets} />
               <NavBtn active={activeTab==='admin_users'} onClick={()=>{setActiveTab('admin_users'); closeSidebarMobile();}} icon={<Users size={20} />} label="Data Member CRM" />
+              <NavBtn active={activeTab==='admin_lps'} onClick={()=>{setActiveTab('admin_lps'); closeSidebarMobile();}} icon={<MonitorPlay size={20} />} label="Data Landing Page" />
               
               <NavBtn active={activeTab==='admin_academy'} onClick={()=>{setActiveTab('admin_academy'); closeSidebarMobile();}} icon={<GraduationCap size={20} />} label="Kelola Academy LMS" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20} />} label="Kelola Master File" />
@@ -1608,7 +1665,43 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB BARU: KUIS AI DINAMIS EDUKASI */}
+          {/* TAB: RUANG FOKUS VIP (POMODORO) */}
+          {/* ==================================================== */}
+          {activeTab === 'focus' && !isAdmin && (
+             <div className="animate-fadeIn max-w-2xl mx-auto space-y-8 text-center">
+                 <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 text-indigo-600 rounded-full mb-2 shadow-lg shadow-indigo-100"><Timer size={40} /></div>
+                 <h2 className="text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Ruang Fokus VIP</h2>
+                 <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Tingkatkan produktivitas Anda dengan teknik Pomodoro. Fokus selama 25 menit untuk mendapatkan <strong className="text-indigo-600">+25 Poin Reward</strong>.</p>
+                 
+                 <div className={`bg-white rounded-[3rem] p-12 border ${focusMode === 'work' ? 'border-indigo-200 shadow-[0_20px_60px_rgba(79,70,229,0.15)]' : 'border-emerald-200 shadow-[0_20px_60px_rgba(16,185,129,0.15)]'} transition-all duration-500`}>
+                     <div className="flex justify-center gap-4 mb-10">
+                         <span className={`px-4 py-2 rounded-full font-black text-xs uppercase tracking-widest ${focusMode === 'work' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-400'}`}>Sesi Fokus</span>
+                         <span className={`px-4 py-2 rounded-full font-black text-xs uppercase tracking-widest ${focusMode === 'break' ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-100 text-slate-400'}`}>Istirahat</span>
+                     </div>
+                     
+                     <div className={`text-8xl sm:text-9xl font-black font-['Outfit'] mb-12 tracking-tighter ${focusMode === 'work' ? 'text-indigo-900' : 'text-emerald-900'}`}>
+                         {formatTime(focusTimeLeft)}
+                     </div>
+                     
+                     <div className="flex justify-center gap-4">
+                         {!isFocusing ? (
+                             <button onClick={() => setIsFocusing(true)} className={`px-12 py-5 rounded-2xl font-black text-white shadow-xl hover:scale-105 transition-all text-lg ${focusMode === 'work' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                 MULAI {focusMode === 'work' ? 'FOKUS' : 'ISTIRAHAT'}
+                             </button>
+                         ) : (
+                             <>
+                                 <button onClick={() => setIsFocusing(false)} className="px-8 py-5 rounded-2xl font-black bg-amber-500 text-white shadow-xl hover:bg-amber-600 transition-all text-lg">JEDA</button>
+                                 <button onClick={() => {setIsFocusing(false); setFocusTimeLeft(focusMode === 'work' ? 25*60 : 5*60);}} className="px-8 py-5 rounded-2xl font-black bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all text-lg">RESET</button>
+                             </>
+                         )}
+                     </div>
+                 </div>
+                 {focusMode === 'work' && <p className="text-xs text-slate-400 font-bold">*Jangan tutup halaman ini agar waktu fokus tetap berjalan.</p>}
+             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB: KUIS AI DINAMIS EDUKASI */}
           {/* ==================================================== */}
           {activeTab === 'quiz' && !isAdmin && (
              <div className="animate-fadeIn max-w-3xl mx-auto space-y-8">
@@ -1681,7 +1774,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB BARU: AI 1-CLICK LANDING PAGE REPLICATOR */}
+          {/* TAB: AI 1-CLICK LANDING PAGE REPLICATOR */}
           {/* ==================================================== */}
           {activeTab === 'landingpage' && !isAdmin && (
              <div className="animate-fadeIn space-y-8 max-w-4xl mx-auto">
@@ -1812,7 +1905,7 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: AI MARKETING COPILOT (JENIUS & KEREN) */}
+          {/* TAB: AI MARKETING COPILOT */}
           {/* ==================================================== */}
           {activeTab === 'copilot' && !isAdmin && (
              <div className="animate-fadeIn space-y-8">
@@ -1961,6 +2054,84 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB BARU: ADMIN LANDING PAGES (REPLICATED SITES) */}
+          {activeTab === 'admin_lps' && isAdmin && (
+            <div className="animate-fadeIn space-y-10">
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Data Landing Page (Web Replikator)</h2>
+                  <div className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-sm font-black flex items-center gap-2">
+                     <LayoutTemplate size={18} /> Total: {allLandingPages.length} Web
+                  </div>
+               </div>
+               
+               <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
+                  <div className="overflow-x-auto w-full custom-scrollbar">
+                    <table className="w-full text-left min-w-[900px]">
+                       <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          <tr>
+                             <th className="px-8 py-5">Pemilik Web</th>
+                             <th className="px-8 py-5">Custom Domain / Status</th>
+                             <th className="px-8 py-5">Affiliate Link System</th>
+                             <th className="px-8 py-5 text-center">Aksi</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-50">
+                          {allLandingPages.map(lp => (
+                            <tr key={lp.id} className="hover:bg-slate-50 transition-colors">
+                               <td className="px-8 py-6">
+                                  <p className="font-black text-slate-900 text-sm">{lp.ownerName}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono mt-1">UID: {lp.ownerId}</p>
+                               </td>
+                               <td className="px-8 py-6">
+                                  {lp.customDomain ? (
+                                      <div className="flex flex-col gap-1">
+                                          <span className="font-bold text-indigo-600 text-sm">{lp.customDomain}</span>
+                                          <span className="text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full w-max font-black">ACTIVE</span>
+                                      </div>
+                                  ) : (
+                                      <span className="text-xs text-slate-400 italic">Belum Set Domain</span>
+                                  )}
+                               </td>
+                               <td className="px-8 py-6">
+                                  <div className="flex bg-slate-100 p-2 rounded-lg items-center gap-2 w-max">
+                                     <span className="text-xs font-bold text-slate-500 truncate max-w-[150px]">?ref={lp.ownerId}</span>
+                                     <button onClick={()=>copyToClipboard(`https://member.bagihosting.com/?ref=${lp.ownerId}`)} className="text-indigo-500 hover:text-indigo-700"><Copy size={14}/></button>
+                                  </div>
+                               </td>
+                               <td className="px-8 py-6 text-center">
+                                  <div className="flex justify-center gap-2">
+                                     <a href={`https://member.bagihosting.com/?ref=${lp.ownerId}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors" title="Lihat Website"><ExternalLink size={16} /></a>
+                                     <button onClick={()=>{setEditLPForm({...lp}); window.scrollTo({top:0, behavior:'smooth'});}} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors" title="Edit Domain"><Edit3 size={16} /></button>
+                                     <button onClick={()=>handleAdminDeleteLP(lp.ownerId)} className="p-2.5 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-colors" title="Hapus Web"><Trash2 size={16} /></button>
+                                  </div>
+                               </td>
+                            </tr>
+                          ))}
+                          {allLandingPages.length === 0 && (
+                             <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Belum ada member yang membuat web replikator.</td></tr>
+                          )}
+                       </tbody>
+                    </table>
+                  </div>
+               </div>
+
+               {/* Modal/Form Edit LP by Admin */}
+               {editLPForm && (
+                  <div className="bg-white rounded-[2rem] border border-indigo-200 shadow-xl p-8 relative animate-slideUp">
+                      <button onClick={()=>setEditLPForm(null)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-rose-500"><X /></button>
+                      <h3 className="text-xl font-black text-slate-800 mb-6">Edit Data Web: {editLPForm.ownerName}</h3>
+                      <form onSubmit={(e) => handleAdminUpdateLP(e, editLPForm.ownerId)} className="space-y-4 max-w-lg">
+                          <div className="space-y-2">
+                              <label className="text-xs font-bold text-slate-500">Custom Domain</label>
+                              <input type="text" value={editLPForm.customDomain || ''} onChange={e => setEditLPForm({...editLPForm, customDomain: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 text-sm font-bold" placeholder="Tanpa https:// (misal: www.webku.com)" />
+                          </div>
+                          <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-sm shadow-md hover:bg-indigo-700">SIMPAN PERUBAHAN</button>
+                      </form>
+                  </div>
+               )}
+            </div>
+          )}
+
           {/* TAB: ADMIN AI CONFIGURATION */}
           {activeTab === 'admin_ai_config' && isAdmin && (
              <div className="animate-fadeIn space-y-10">
@@ -2070,8 +2241,8 @@ export default function App() {
              </div>
           )}
 
-          {/* TAB: FILES (MASTER FILES) */}
-          {activeTab === 'files' && (
+          {/* TAB: FILES (MASTER FILES) - MEMBER VIEW */}
+          {activeTab === 'files' && !isAdmin && (
              <div className="space-y-10 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                   <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Katalog Master File</h2>
@@ -2082,10 +2253,57 @@ export default function App() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                    {filteredFiles.map(f => (
-                     <ProFileCard key={f.id} file={f} currentTier={currentTier} isCompleted={completedFiles.includes(f.id)} onToggleProgress={() => handleToggleFileProgress(f.id, f.name)} />
+                     <ProFileCard key={f.id} file={f} currentTier={currentTier} isCompleted={completedFiles.includes(f.id)} onToggleProgress={() => handleToggleFileProgress(f.id, f.name)} isAdminCard={false} />
                    ))}
+                   {filteredFiles.length === 0 && <p className="col-span-full text-center text-slate-400 py-10">Belum ada master file tersedia.</p>}
                 </div>
              </div>
+          )}
+          
+          {/* TAB: KELOLA MASTER FILES - ADMIN VIEW */}
+          {activeTab === 'admin_files' && isAdmin && (
+              <div className="space-y-10 animate-fadeIn">
+                 <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Kelola Master File</h2>
+                 
+                 <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-200">
+                     <h3 className="font-black text-lg text-slate-800 mb-6 border-b border-slate-100 pb-4">{editingId ? 'Edit File' : 'Tambah File Baru'}</h3>
+                     <form onSubmit={handleProductSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-slate-500">Nama File</label>
+                             <input type="text" required value={productForm.name} onChange={e=>setProductForm({...productForm, name: e.target.value})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm" />
+                         </div>
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-slate-500">URL / Link Download</label>
+                             <input type="url" required value={productForm.url} onChange={e=>setProductForm({...productForm, url: e.target.value})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm" />
+                         </div>
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-slate-500">Kategori</label>
+                             <select value={productForm.category} onChange={e=>setProductForm({...productForm, category: e.target.value})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm">
+                                 <option value="Ebook">Ebook</option>
+                                 <option value="Video">Video / Course</option>
+                                 <option value="Asset">Asset Grafis / Code</option>
+                             </select>
+                         </div>
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-slate-500">Minimal Tier (0=Free, 3=Agency)</label>
+                             <select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel: parseInt(e.target.value)})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm">
+                                 {[0,1,2,3].map(lv => <option key={lv} value={lv}>Tier {lv} - {TIER_LEVELS[lv].name}</option>)}
+                             </select>
+                         </div>
+                         <div className="col-span-full pt-4">
+                            <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-sm shadow-md hover:bg-indigo-700">{editingId ? 'SIMPAN PERUBAHAN' : 'TAMBAH MASTER FILE'}</button>
+                            {editingId && <button type="button" onClick={() => {setEditingId(null); setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });}} className="ml-4 px-8 py-3 rounded-xl font-black text-sm text-slate-500 hover:bg-slate-100">BATAL</button>}
+                         </div>
+                     </form>
+                 </div>
+                 
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                   {files.map(f => (
+                     <ProFileCard key={f.id} file={f} currentTier={3} isCompleted={false} onToggleProgress={()=>{}} isAdminCard={true} />
+                   ))}
+                   {files.length === 0 && <p className="col-span-full text-center text-slate-400 py-10">Belum ada file.</p>}
+                 </div>
+              </div>
           )}
 
           {/* TAB: LEADERBOARD */}
@@ -2145,8 +2363,8 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB: TRANSACTIONS */}
-          {activeTab === 'transactions' && (
+          {/* TAB: TRANSACTIONS (MEMBER VIEW) */}
+          {activeTab === 'transactions' && !isAdmin && (
             <div className="animate-fadeIn space-y-10">
                <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Riwayat Pembelian</h2>
                <div className="grid grid-cols-1 gap-4">
@@ -2162,17 +2380,18 @@ export default function App() {
                        </div>
                        <div className="text-right">
                           <p className={`font-black uppercase text-xs ${t.status === 'pending' ? 'text-amber-500' : t.status === 'rejected' ? 'text-rose-500' : 'text-emerald-500'}`}>{t.status}</p>
-                          {t.status === 'pending' && !isAdmin && <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="mt-2 bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg">Info WA</button>}
+                          {t.status === 'pending' && <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="mt-2 bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg">Info WA</button>}
                        </div>
                     </div>
                  ))}
+                 {transactions.length === 0 && <p className="text-center text-slate-400 py-10 font-bold">Belum ada riwayat transaksi.</p>}
                </div>
             </div>
           )}
 
           {/* TAB: ADMIN TRANS */}
           {activeTab === 'admin_trans' && isAdmin && (
-            <div className="space-y-10">
+            <div className="space-y-10 animate-fadeIn">
                <h2 className="text-3xl font-black text-slate-900">Validasi Pembayaran</h2>
                <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
                   <div className="overflow-x-auto w-full custom-scrollbar">
@@ -2194,6 +2413,7 @@ export default function App() {
                                </td>
                             </tr>
                           ))}
+                          {transactions.filter(t => t.status==='pending').length === 0 && <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Tidak ada transaksi yang butuh validasi.</td></tr>}
                        </tbody>
                     </table>
                   </div>
@@ -2203,7 +2423,7 @@ export default function App() {
 
           {/* TAB: ADMIN WITHDRAWAL (CRUD) */}
           {activeTab === 'admin_wd' && isAdmin && (
-            <div className="space-y-10">
+            <div className="space-y-10 animate-fadeIn">
                <h2 className="text-3xl font-black text-slate-900">Kelola Pencairan Dana (WD)</h2>
                <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
                   <div className="overflow-x-auto w-full custom-scrollbar">
@@ -2225,6 +2445,7 @@ export default function App() {
                                </td>
                             </tr>
                           ))}
+                          {withdrawals.length === 0 && <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Tidak ada riwayat penarikan dana.</td></tr>}
                        </tbody>
                     </table>
                   </div>
@@ -2251,6 +2472,234 @@ export default function App() {
                    </div>
                 </div>
              </div>
+          )}
+
+          {/* TAB: TIKET BANTUAN (MEMBER VIEW) */}
+          {activeTab === 'support' && !isAdmin && (
+              <div className="animate-fadeIn space-y-10 max-w-4xl mx-auto">
+                 <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Pusat Bantuan</h2>
+                 
+                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl">
+                    <h3 className="font-black text-lg text-slate-800 mb-6">Buat Tiket Baru</h3>
+                    <form onSubmit={handleCreateTicket} className="space-y-4">
+                        <input type="text" required value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} placeholder="Subjek Masalah (Contoh: Gagal akses modul)" className="w-full px-5 py-4 rounded-xl border focus:ring-2 outline-none font-bold text-sm" />
+                        <textarea required value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} placeholder="Jelaskan masalah Anda dengan detail..." rows="4" className="w-full px-5 py-4 rounded-xl border focus:ring-2 outline-none font-medium text-sm custom-scrollbar"></textarea>
+                        <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-black text-sm shadow-md hover:bg-indigo-700">KIRIM TIKET</button>
+                    </form>
+                 </div>
+
+                 <div className="space-y-4">
+                    <h3 className="font-black text-xl text-slate-800">Riwayat Tiket Saya</h3>
+                    {tickets.length === 0 ? (
+                        <p className="text-slate-400 text-center py-10 bg-white rounded-[2.5rem] border border-slate-200">Belum ada tiket bantuan.</p>
+                    ) : (
+                        tickets.map(t => (
+                            <div key={t.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col gap-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h4 className="font-black text-slate-800 text-lg">{t.subject}</h4>
+                                        <p className="text-[10px] text-slate-400 font-mono mt-1">{new Date(t.createdAt).toLocaleString('id-ID')}</p>
+                                    </div>
+                                    <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-full ${t.status === 'open' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>{t.status}</span>
+                                </div>
+                                <div className="bg-slate-50 p-4 rounded-xl text-sm text-slate-600 whitespace-pre-wrap">{t.message}</div>
+                                {t.adminReply && (
+                                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                                        <p className="text-[10px] font-black text-indigo-600 uppercase mb-2">Balasan Admin:</p>
+                                        <p className="text-sm text-slate-700 whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: t.adminReply}}></p>
+                                    </div>
+                                )}
+                            </div>
+                        ))
+                    )}
+                 </div>
+              </div>
+          )}
+          
+          {/* TAB: ADMIN SUPPORT HELPDESK */}
+          {activeTab === 'admin_support' && isAdmin && (
+              <div className="animate-fadeIn space-y-10">
+                 <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Support Helpdesk</h2>
+                 <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl">
+                    <div className="overflow-x-auto w-full custom-scrollbar">
+                        <table className="w-full text-left min-w-[900px]">
+                            <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                <tr><th className="px-8 py-5">Pengirim</th><th className="px-8 py-5">Subjek / Tanggal</th><th className="px-8 py-5">Status</th><th className="px-8 py-5 text-center">Aksi</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                                    <tr key={t.id} className="hover:bg-slate-50">
+                                        <td className="px-8 py-6 font-bold text-sm text-slate-800">{t.userName}</td>
+                                        <td className="px-8 py-6"><p className="font-black text-slate-900">{t.subject}</p><p className="text-[10px] text-slate-400">{new Date(t.createdAt).toLocaleString('id-ID')}</p></td>
+                                        <td className="px-8 py-6"><span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${t.status === 'open' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>{t.status}</span></td>
+                                        <td className="px-8 py-6 text-center">
+                                            <div className="flex justify-center gap-2">
+                                                <button onClick={()=>{setSelectedTicketDetail(t); setReplyTicketText(t.adminReply?.replace(/<[^>]+>/g, '') || ''); window.scrollTo({top:0, behavior:'smooth'});}} className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl hover:bg-indigo-100"><MessageSquare size={16} /></button>
+                                                <button onClick={()=>handleDeleteTicket(t.id)} className="bg-rose-50 text-rose-600 p-2.5 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {tickets.length === 0 && <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Tidak ada tiket bantuan.</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                 </div>
+
+                 {/* Admin Reply Modal/Form */}
+                 {selectedTicketDetail && (
+                     <div className="bg-white p-8 rounded-[2.5rem] border border-indigo-200 shadow-2xl relative animate-slideUp">
+                         <button onClick={()=>setSelectedTicketDetail(null)} className="absolute top-6 right-6 text-slate-400 hover:text-rose-500"><X /></button>
+                         <h3 className="font-black text-xl text-slate-800 mb-2">Balas Tiket</h3>
+                         <div className="bg-slate-50 p-4 rounded-xl text-sm text-slate-600 mb-6 border border-slate-100">
+                             <p className="font-black mb-1">{selectedTicketDetail.subject}</p>
+                             <p>{selectedTicketDetail.message}</p>
+                         </div>
+                         <form onSubmit={handleAdminReplyTicket} className="space-y-4">
+                             <textarea required rows="4" value={replyTicketText} onChange={e=>setReplyTicketText(e.target.value)} placeholder="Ketik balasan untuk member..." className="w-full px-5 py-4 rounded-xl border focus:ring-2 outline-none font-medium text-sm custom-scrollbar"></textarea>
+                             <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-sm shadow-md hover:bg-indigo-700">KIRIM BALASAN</button>
+                         </form>
+                     </div>
+                 )}
+              </div>
+          )}
+
+          {/* TAB: ADMIN KELOLA KUPON */}
+          {activeTab === 'admin_coupons' && isAdmin && (
+              <div className="animate-fadeIn space-y-10 max-w-4xl">
+                 <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Kelola Kupon Diskon</h2>
+                 
+                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl">
+                    <h3 className="font-black text-lg text-slate-800 mb-6">Buat Kupon Baru</h3>
+                    <form onSubmit={handleCreateCoupon} className="flex gap-4 items-end">
+                        <div className="flex-1 space-y-2">
+                            <label className="text-xs font-bold text-slate-500">Kode Kupon (Otomatis Kapital)</label>
+                            <input type="text" required value={couponForm.code} onChange={e=>setCouponForm({...couponForm, code: e.target.value.toUpperCase()})} placeholder="PROMO50" className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm uppercase" />
+                        </div>
+                        <div className="w-32 space-y-2">
+                            <label className="text-xs font-bold text-slate-500">Diskon (%)</label>
+                            <input type="number" min="1" max="100" required value={couponForm.discount} onChange={e=>setCouponForm({...couponForm, discount: e.target.value})} placeholder="50" className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm" />
+                        </div>
+                        <button type="submit" className="bg-indigo-600 text-white px-6 py-3 h-[46px] rounded-xl font-black text-sm shadow-md hover:bg-indigo-700"><Plus size={18} /></button>
+                    </form>
+                 </div>
+
+                 <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            <tr><th className="px-8 py-5">Kode Kupon</th><th className="px-8 py-5 text-center">Diskon</th><th className="px-8 py-5 text-center">Status</th><th className="px-8 py-5 text-center">Aksi</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {coupons.map(c => (
+                                <tr key={c.id}>
+                                    <td className="px-8 py-6 font-black text-lg text-indigo-600 tracking-wider">{c.code}</td>
+                                    <td className="px-8 py-6 text-center font-bold text-slate-700">{c.discount}%</td>
+                                    <td className="px-8 py-6 text-center"><span className="text-[9px] bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full font-black uppercase">AKTIF</span></td>
+                                    <td className="px-8 py-6 text-center"><button onClick={()=>handleDeleteCoupon(c.id)} className="p-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button></td>
+                                </tr>
+                            ))}
+                            {coupons.length === 0 && <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Belum ada kupon.</td></tr>}
+                        </tbody>
+                    </table>
+                 </div>
+              </div>
+          )}
+
+          {/* TAB: ADMIN KELOLA ACADEMY LMS */}
+          {activeTab === 'admin_academy' && isAdmin && (
+              <div className="animate-fadeIn space-y-10">
+                 <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Kelola Academy (LMS)</h2>
+                 
+                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl max-w-2xl">
+                    <h3 className="font-black text-lg text-slate-800 mb-6">Tambah Modul Utama</h3>
+                    <form onSubmit={handleAdminAddModul} className="flex gap-4">
+                        <input type="text" required value={modulTitle} onChange={e=>setModulTitle(e.target.value)} placeholder="Nama Modul (Contoh: Fundamental Bisnis)" className="flex-1 px-5 py-3.5 rounded-xl border focus:ring-2 outline-none font-bold text-sm" />
+                        <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-6 py-3.5 rounded-xl font-black text-sm shadow-md hover:bg-indigo-700">TAMBAH MODUL</button>
+                    </form>
+                 </div>
+
+                 <div className="space-y-6">
+                    {academyModules.map(mod => (
+                        <div key={mod.id} className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm relative group">
+                            <button onClick={()=>handleAdminDeleteModul(mod.id)} className="absolute top-6 right-6 p-2 text-rose-300 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
+                            <h4 className="font-black text-xl text-slate-800 mb-6 pr-10">{mod.title}</h4>
+                            
+                            <div className="space-y-3 mb-6">
+                                {mod.lessons?.map((lesson, idx) => (
+                                    <div key={lesson.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg">{lesson.type === 'video' ? <Video size={14}/> : lesson.type==='quiz' ? <HelpCircle size={14}/> : <FileText size={14}/>}</div>
+                                            <span className="font-bold text-sm text-slate-700">{idx+1}. {lesson.title}</span>
+                                            <span className="text-[9px] bg-amber-100 text-amber-600 px-2 rounded-full font-black">+{lesson.points} Poin</span>
+                                        </div>
+                                        <button onClick={()=>handleAdminDeleteLesson(mod.id, lesson.id)} className="p-1.5 text-rose-400 hover:bg-rose-50 rounded"><Trash2 size={14}/></button>
+                                    </div>
+                                ))}
+                                {(!mod.lessons || mod.lessons.length === 0) && <p className="text-xs text-slate-400 italic">Belum ada materi di modul ini.</p>}
+                            </div>
+
+                            <button onClick={()=>{setTargetModulId(mod.id); setLessonModalOpen(true);}} className="text-sm font-black text-indigo-600 flex items-center gap-1 hover:underline"><Plus size={16}/> TAMBAH MATERI BARU</button>
+                        </div>
+                    ))}
+                 </div>
+
+                 {/* Modal Tambah Lesson */}
+                 {lessonModalOpen && (
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-900 bg-opacity-80 backdrop-blur-md">
+                        <div className="max-w-3xl w-full bg-white rounded-[2.5rem] shadow-3xl overflow-hidden flex flex-col max-h-[90vh]">
+                            <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
+                                <h3 className="text-xl font-black">Tambah Materi Pembelajaran</h3>
+                                <button onClick={()=>{setLessonModalOpen(false); setTargetModulId(null);}}><X /></button>
+                            </div>
+                            <form onSubmit={handleAdminSaveLesson} className="p-8 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Judul Materi</label><input type="text" required value={lessonForm.title} onChange={e=>setLessonForm({...lessonForm, title: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-bold text-sm" /></div>
+                                    <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Poin Reward Penyelesaian</label><input type="number" required value={lessonForm.points} onChange={e=>setLessonForm({...lessonForm, points: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-bold text-sm" /></div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500">Tipe Materi</label>
+                                    <select value={lessonForm.type} onChange={e=>setLessonForm({...lessonForm, type: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-bold text-sm">
+                                        <option value="video">Video Embed (YouTube/Vimeo)</option>
+                                        <option value="text">Artikel / Teks (HTML)</option>
+                                        <option value="quiz">Kuis Pilihan Ganda</option>
+                                    </select>
+                                </div>
+
+                                {lessonForm.type === 'video' && (
+                                    <>
+                                        <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Link URL Embed Video</label><input type="url" required value={lessonForm.content} onChange={e=>setLessonForm({...lessonForm, content: e.target.value})} placeholder="https://www.youtube.com/embed/..." className="w-full px-4 py-3 rounded-xl border font-medium text-sm" /></div>
+                                        <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Deskripsi Pendek di Bawah Video (HTML diizinkan)</label><textarea rows="3" value={lessonForm.desc} onChange={e=>setLessonForm({...lessonForm, desc: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-medium text-sm custom-scrollbar"></textarea></div>
+                                    </>
+                                )}
+
+                                {lessonForm.type === 'text' && (
+                                    <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Konten Artikel (HTML penuh diizinkan)</label><textarea required rows="8" value={lessonForm.content} onChange={e=>setLessonForm({...lessonForm, content: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-medium text-sm custom-scrollbar"></textarea></div>
+                                )}
+
+                                {lessonForm.type === 'quiz' && (
+                                    <div className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                                        <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Pertanyaan Kuis</label><input type="text" required value={lessonForm.question} onChange={e=>setLessonForm({...lessonForm, question: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-bold text-sm" /></div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {[0,1,2,3].map(i => (
+                                                <div key={i} className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400">Opsi {['A','B','C','D'][i]}</label><input type="text" required value={lessonForm.options[i]} onChange={e=>{const newOpts=[...lessonForm.options]; newOpts[i]=e.target.value; setLessonForm({...lessonForm, options: newOpts})}} className="w-full px-3 py-2 rounded-lg border text-sm font-medium" /></div>
+                                            ))}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500">Jawaban Benar</label>
+                                            <select value={lessonForm.answer} onChange={e=>setLessonForm({...lessonForm, answer: parseInt(e.target.value)})} className="w-full px-4 py-3 rounded-xl border font-bold text-sm">
+                                                <option value={0}>Opsi A</option><option value={1}>Opsi B</option><option value={2}>Opsi C</option><option value={3}>Opsi D</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Penjelasan (Tampil setelah dijawab)</label><textarea required rows="2" value={lessonForm.exp} onChange={e=>setLessonForm({...lessonForm, exp: e.target.value})} className="w-full px-4 py-3 rounded-xl border font-medium text-sm"></textarea></div>
+                                    </div>
+                                )}
+
+                                <button type="submit" disabled={isProcessingAction.current} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700">SIMPAN MATERI</button>
+                            </form>
+                        </div>
+                    </div>
+                 )}
+              </div>
           )}
 
           {/* TAB: ADMIN USERS CRM */}
