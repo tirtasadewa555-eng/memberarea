@@ -39,10 +39,38 @@ const ADMIN_EMAIL = "admin@website.com"; // Ganti dengan Email Admin Anda
 const WHATSAPP_ADMIN = "628123456789"; 
 
 const TIER_LEVELS = {
-  0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0 },
-  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000 },
-  2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 249000 },
-  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000 }
+  0: { 
+      name: 'Free', 
+      color: 'text-slate-500', 
+      bg: 'bg-slate-100', 
+      price: 0,
+      desc: 'Akses terbatas untuk member baru',
+      features: ['Akses Modul Dasar', 'Kuis Harian'] 
+  },
+  1: { 
+      name: 'Personal', 
+      color: 'text-emerald-600', 
+      bg: 'bg-emerald-50', 
+      price: 99000,
+      desc: 'Cocok untuk individu yang baru memulai',
+      features: ['Semua Akses Free', 'Akses Semua Modul', 'Grup Komunitas Terbatas', 'Sertifikat Digital'] 
+  },
+  2: { 
+      name: 'Business', 
+      color: 'text-indigo-600', 
+      bg: 'bg-indigo-50', 
+      price: 249000,
+      desc: 'Untuk profesional dan bisnis berkembang',
+      features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'Grup Komunitas VIP', 'Support Prioritas', 'Ruang Fokus VIP'] 
+  },
+  3: { 
+      name: 'Agency', 
+      color: 'text-amber-600', 
+      bg: 'bg-amber-50', 
+      price: 499000,
+      desc: 'Akses penuh tanpa batas untuk tim & agensi',
+      features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Lisensi Komersial', '1-on-1 Mentoring', 'Dedicated Support 24/7'] 
+  }
 };
 
 const BANK_ACCOUNTS = [
@@ -1497,20 +1525,33 @@ export default function App() {
                   <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 font-['Outfit'] tracking-tight leading-tight">Pilih Paket Terbaik</h2>
                </div>
                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {[1, 2, 3].map(lv => {
-                    const isActive = currentTier === lv;
-                    const isPassed = currentTier > lv;
-                    const isPending = [...transactions].some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
-                    return (
-                      <div key={lv} className={`bg-white rounded-[2rem] border-2 p-10 flex flex-col h-full relative transition-all duration-300 ${isActive ? 'border-indigo-600 shadow-2xl lg:-translate-y-4' : 'border-slate-100 hover:border-slate-300 hover:shadow-xl'}`}>
-                         <h3 className="text-2xl font-black text-slate-900 mb-6 font-['Outfit'] uppercase">{TIER_LEVELS[lv].name}</h3>
-                         <span className="text-3xl font-black text-indigo-600 mb-8">Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
-                         <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); setAppliedCoupon(null); setCouponInput('');}} disabled={isActive || isPassed || isPending} className={`w-full mt-auto py-5 rounded-2xl font-black ${isActive||isPassed||isPending ? 'bg-slate-100 text-slate-400' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-xl'}`}>
-                           {isActive ? 'STATUS AKTIF' : isPassed ? 'TERLEWATI' : isPending ? 'PROSES VALIDASI' : 'PILIH PAKET'}
-                         </button>
-                      </div>
-                    )
-                  })}
+                 {[1, 2, 3].map(lv => {
+                   const isActive = currentTier === lv;
+                   const isPassed = currentTier > lv;
+                   const isPending = [...transactions].some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
+                   return (
+                     <div key={lv} className={`bg-white rounded-[2rem] border-2 p-10 flex flex-col h-full relative transition-all duration-300 ${isActive ? 'border-indigo-600 shadow-2xl lg:-translate-y-4' : 'border-slate-100 hover:border-slate-300 hover:shadow-xl'}`}>
+                        {isActive && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">Paket Aktif</div>}
+                        <h3 className="text-2xl font-black text-slate-900 mb-2 font-['Outfit'] uppercase">{TIER_LEVELS[lv].name}</h3>
+                        <p className="text-sm text-slate-500 mb-6 min-h-[40px]">{TIER_LEVELS[lv].desc}</p>
+                        <span className="text-3xl font-black text-indigo-600 mb-8">Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
+                        
+                        {/* Menambahkan Daftar Fitur / Deskripsi Paket */}
+                        <ul className="space-y-4 mb-8 flex-1">
+                          {TIER_LEVELS[lv].features.map((feat, i) => (
+                            <li key={i} className="flex items-start gap-3">
+                              <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+                              <span className="text-sm font-medium text-slate-600">{feat}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); setAppliedCoupon(null); setCouponInput('');}} disabled={isActive || isPassed || isPending} className={`w-full mt-auto py-5 rounded-2xl font-black transition-all ${isActive||isPassed||isPending ? 'bg-slate-100 text-slate-400' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-xl'}`}>
+                          {isActive ? 'STATUS AKTIF' : isPassed ? 'TERLEWATI' : isPending ? 'PROSES VALIDASI' : 'PILIH PAKET'}
+                        </button>
+                     </div>
+                   )
+                 })}
                </div>
             </div>
           )}
@@ -1520,7 +1561,7 @@ export default function App() {
             <div className="animate-fadeIn space-y-10">
                <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Riwayat Pembelian</h2>
                <div className="grid grid-cols-1 gap-4">
-                  {[...transactions].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
+                 {[...transactions].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
                     <div key={t.id} className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
                        <div className="flex items-center gap-6 w-full md:w-auto">
                           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${t.status === 'pending' ? 'bg-amber-50 text-amber-500' : t.status === 'rejected' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
@@ -1537,7 +1578,7 @@ export default function App() {
                           {t.status === 'pending' && !isAdmin && <button onClick={()=>openWhatsAppConfirmation({name: t.packageName, price: t.price})} className="mt-2 bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg">Info WA</button>}
                        </div>
                     </div>
-                  ))}
+                 ))}
                </div>
             </div>
           )}
@@ -1563,7 +1604,7 @@ export default function App() {
                                   <div className="bg-slate-100 p-3 rounded-xl text-xs font-bold">
                                      <p>Pengirim: {t.senderName}</p>
                                      <p>Bank: {t.senderBank}</p>
-                                  </div>
+                                 </div>
                                </td>
                                <td className="px-8 py-6 font-black text-indigo-600">Rp {t.price.toLocaleString('id-ID')}</td>
                                <td className="px-8 py-6 text-center">
