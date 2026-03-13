@@ -20,7 +20,7 @@ import {
   MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, HelpCircle, CheckCircle2, ListPlus,
-  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, Cpu, Key // ICON BARU UNTUK AI & API KEY
+  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, Cpu, Key, Sparkles as MagicWand
 } from 'lucide-react';
 
 // ==========================================
@@ -46,7 +46,7 @@ const TIER_LEVELS = {
       bg: 'bg-slate-100', 
       price: 0,
       desc: 'Akses terbatas untuk member baru',
-      features: ['Akses Modul Dasar', 'Kuis Harian'] 
+      features: ['Akses Modul Dasar', 'Kuis Harian AI'] 
   },
   1: { 
       name: 'Personal', 
@@ -62,7 +62,7 @@ const TIER_LEVELS = {
       bg: 'bg-indigo-50', 
       price: 249000,
       desc: 'Untuk profesional dan bisnis berkembang',
-      features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'Grup Komunitas VIP', 'Support Prioritas', 'Ruang Fokus VIP'] 
+      features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'AI Copilot Terbatas', 'Support Prioritas', 'Ruang Fokus VIP'] 
   },
   3: { 
       name: 'Agency', 
@@ -70,21 +70,9 @@ const TIER_LEVELS = {
       bg: 'bg-amber-50', 
       price: 499000,
       desc: 'Akses penuh tanpa batas untuk tim & agensi',
-      features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Lisensi Komersial', '1-on-1 Mentoring', 'Dedicated Support 24/7'] 
+      features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Unlimited AI Copilot', '1-on-1 Mentoring', 'Dedicated Support 24/7'] 
   }
 };
-
-const BANK_ACCOUNTS = [
-  { bank: "BCA", number: "1234 5678 90", owner: "PT DIGITAL SUKSES" },
-  { bank: "MANDIRI", number: "0987 6543 21", owner: "ADMIN MEMBERSHIP" }
-];
-
-// Data Kuis Edukasi Harian
-const DAILY_QUIZZES = [
-  { q: "Apa kepanjangan dari CTA dalam digital marketing?", options: ["Call To Action", "Click To Add", "Cost To Acquire", "Customer Target Area"], answer: 0, exp: "CTA (Call To Action) adalah instruksi berupa teks atau tombol yang didesain untuk memancing respon langsung dari audiens." },
-  { q: "Manakah metrik yang mengukur persentase pengunjung yang langsung keluar dari website tanpa interaksi?", options: ["Click-Through Rate", "Bounce Rate", "Conversion Rate", "Retention Rate"], answer: 1, exp: "Bounce Rate mengukur persentase sesi satu halaman di mana pengguna keluar tanpa berpindah halaman lain." },
-  { q: "Metode menjual produk orang lain dan mendapatkan komisi disebut?", options: ["Dropshipping", "Affiliate Marketing", "MLM", "White Labeling"], answer: 1, exp: "Affiliate Marketing memungkinkan Anda mendapat komisi dari setiap penjualan yang terjadi lewat link unik (referral) Anda." }
-];
 
 // Global CSS
 const GLOBAL_CSS = `
@@ -139,6 +127,8 @@ export default function App() {
   const [checkoutPkg, setCheckoutPkg] = useState(null);
   const [selectedUserDetail, setSelectedUserDetail] = useState(null); 
   const [showCertificate, setShowCertificate] = useState(false); 
+  
+  // --- AI Mentor States ---
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiTyping, setAiTyping] = useState(false);
   const [aiInput, setAiInput] = useState('');
@@ -159,13 +149,19 @@ export default function App() {
   const [searchFileQuery, setSearchFileQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
 
-  // --- Fitur Baru: AI Marketing Copilot States ---
+  // --- Fitur AI Marketing Copilot States ---
   const [copilotForm, setCopilotForm] = useState({ product: 'ProSpace VIP', platform: 'whatsapp', tone: 'fomo' });
   const [copilotResult, setCopilotResult] = useState('');
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
 
-  // --- Fitur Baru: Admin AI Configuration ---
+  // --- Fitur Admin AI Configuration ---
   const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
+
+  // --- Fitur AI Kuis Pintar Edukasi ---
+  const [aiQuiz, setAiQuiz] = useState(null);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
+  const [isQuizProcessing, setIsQuizProcessing] = useState(false);
 
   // --- Ruang Fokus VIP States ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
@@ -183,19 +179,6 @@ export default function App() {
   const [targetModulId, setTargetModulId] = useState(null);
   const [lessonForm, setLessonForm] = useState({ title: '', type: 'video', content: '', desc: '', points: 15, question: '', options: ['', '', '', ''], answer: 0, exp: '' });
   const [editUserForm, setEditUserForm] = useState({});
-
-  // --- Kuis Edukasi Harian ---
-  const todayQuizIndex = useMemo(() => {
-     const now = new Date();
-     const start = new Date(now.getFullYear(), 0, 0);
-     const diff = (now - start) + ((start.getTimezoneOffset() - now.getTimezoneOffset()) * 60 * 1000);
-     const oneDay = 1000 * 60 * 60 * 24;
-     const day = Math.floor(diff / oneDay);
-     return day % DAILY_QUIZZES.length;
-  }, []);
-  const todayQuiz = DAILY_QUIZZES[todayQuizIndex];
-  const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
-  const [isQuizProcessing, setIsQuizProcessing] = useState(false);
 
   const chatEndRef = useRef(null);
   const aiEndRef = useRef(null);
@@ -251,7 +234,6 @@ export default function App() {
     };
   }, [transactions, tickets, withdrawals]);
 
-  // Kalkulasi persentase aman untuk tampilan visual Admin
   const approvedPercentage = transactions.length > 0 ? Math.round((adminStats.approvedTrans / transactions.length) * 100) : 0;
   const pendingPercentage = transactions.length > 0 ? Math.round((adminStats.pendingTrans / transactions.length) * 100) : 0;
 
@@ -303,6 +285,42 @@ export default function App() {
             text, type, createdAt: new Date().toISOString()
         });
     } catch (e) {}
+  };
+
+
+  // ==========================================
+  // LOGIC: DYNAMIC AI CALL HANDLER
+  // ==========================================
+  const fetchFromAI = async (promptText) => {
+      if (!aiConfig.isActive) throw new Error("Fitur AI dimatikan oleh Admin.");
+      if (!aiConfig.apiKey) throw new Error("API Key belum dikonfigurasi.");
+
+      try {
+          if (aiConfig.provider === 'gemini') {
+              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${aiConfig.apiKey}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+              });
+              const data = await res.json();
+              if(data.error) throw new Error(data.error.message);
+              return data.candidates[0].content.parts[0].text;
+              
+          } else if (aiConfig.provider === 'openai') {
+              const res = await fetch(`https://api.openai.com/v1/chat/completions`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiConfig.apiKey}` },
+                  body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{role:'user', content:promptText}] })
+              });
+              const data = await res.json();
+              if(data.error) throw new Error(data.error.message);
+              return data.choices[0].message.content;
+          } else {
+             throw new Error("Provider belum disupport di frontend ini.");
+          }
+      } catch (err) {
+          throw err;
+      }
   };
 
 
@@ -476,27 +494,51 @@ export default function App() {
     } catch (e) { showToast("Error klaim poin", "error"); }
   };
 
+  // --- LOGIC: AI KUIS PINTAR EDUKASI ---
+  const handleGenerateAIQuiz = async () => {
+      setIsGeneratingQuiz(true);
+      setAiQuiz(null);
+      setSelectedQuizAnswer(null);
+      try {
+          const prompt = `Buatkan 1 soal kuis pilihan ganda yang sangat edukatif tentang digital marketing, bisnis online, affiliate, atau teknologi web. Wajib direturn murni dalam format JSON valid tanpa format markdown text sama sekali (jangan gunakan \`\`\`json). Struktur JSON yang diminta: {"q": "pertanyaan", "options": ["opsi A", "opsi B", "opsi C", "opsi D"], "answer": 0_sampai_3_index_benar, "exp": "penjelasan detail kenapa jawaban tsb benar"}`;
+          const rawResult = await fetchFromAI(prompt);
+          
+          let cleanJson = rawResult.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const quizData = JSON.parse(cleanJson);
+          setAiQuiz(quizData);
+          showToast("Kuis baru berhasil dibuat oleh AI!", "success");
+      } catch(e) {
+          showToast(e.message || "Gagal generate kuis dari AI. Periksa API Key.", "error");
+      }
+      setIsGeneratingQuiz(false);
+  };
+
   const handleAnswerQuiz = async (selectedIndex) => {
-      if (isQuizProcessing) return;
+      if (isQuizProcessing || !aiQuiz) return;
       const today = new Date().toDateString();
-      if (userData?.lastQuizDate === today) return showToast("Anda sudah ikut kuis hari ini.", "error");
+      const hasAnsweredToday = userData?.lastQuizDate === today;
       
       setIsQuizProcessing(true);
       setSelectedQuizAnswer(selectedIndex);
-      const isCorrect = selectedIndex === todayQuiz.answer;
+      const isCorrect = selectedIndex === aiQuiz.answer;
       const pointEarned = isCorrect ? 20 : 5;
 
       setTimeout(async () => {
-          try {
-             await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(pointEarned), lastQuizDate: today });
-             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(pointEarned), lastQuizDate: today });
-             if (isCorrect) {
-                 showToast(`Tepat Sekali! Anda dapat +${pointEarned} Poin`, 'success');
-                 logActivity(`${userData?.name?.split(' ')[0]} menjawab Kuis Harian dengan Benar! 🧠`, 'quiz');
-             } else { showToast(`Jawaban Kurang Tepat. +${pointEarned} Poin partisipasi`, 'error'); }
-          } catch(e) { showToast("Koneksi gagal", "error"); }
+          if (!hasAnsweredToday) {
+              try {
+                 await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(pointEarned), lastQuizDate: today });
+                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(pointEarned), lastQuizDate: today });
+                 if (isCorrect) {
+                     showToast(`Tepat Sekali! Anda dapat +${pointEarned} Poin`, 'success');
+                     logActivity(`${userData?.name?.split(' ')[0]} menjawab Kuis AI Harian dengan Benar! 🧠`, 'quiz');
+                 } else { showToast(`Jawaban Kurang Tepat. +${pointEarned} Poin partisipasi`, 'error'); }
+              } catch(e) { showToast("Koneksi gagal", "error"); }
+          } else {
+              if (isCorrect) showToast("Tepat Sekali! Latihan kuis yang bagus.", "success");
+              else showToast("Kurang tepat. Jangan menyerah!", "error");
+          }
           setIsQuizProcessing(false);
-      }, 800);
+      }, 1000);
   };
 
   const handleCompleteLearning = async (lesson, isQuiz = false, selectedOpt = null) => {
@@ -774,35 +816,6 @@ export default function App() {
     catch (err) { showToast("Gagal menghapus", "error"); }
   }
 
-  const handleAiSubmit = (e) => {
-    e.preventDefault();
-    if(!aiInput.trim()) return;
-
-    if (!aiConfig.isActive) return showToast("Fitur AI Mentor sedang dinonaktifkan oleh Admin.", "error");
-
-    const newMsgs = [...aiMessages, { role: 'user', text: aiInput }];
-    setAiMessages(newMsgs);
-    setAiInput('');
-    setAiTyping(true);
-    setTimeout(() => {
-        let reply = "Maaf, silakan hubungi Admin untuk pertanyaan teknis mendalam.";
-        
-        if (!aiConfig.apiKey) {
-            reply = "⚠️ Sistem AI berjalan dalam 'Mode Simulasi' karena Admin belum memasukkan API Key di pengaturan.";
-        } else {
-            const low = aiInput.toLowerCase();
-            if(low.includes('halo') || low.includes('hai')) reply = "Halo! Ada yang bisa AI bantu?";
-            if(low.includes('komisi') || low.includes('afiliasi')) reply = "Komisi afiliasi sebesar 20% diberikan saat penjualan via link Anda selesai divalidasi. Cek menu Program Afiliasi.";
-            if(low.includes('sertifikat')) reply = "Sertifikat terbuka jika progress materi mencapai 100%. Teruslah belajar!";
-            if(low.includes('kuis') || low.includes('belajar') || low.includes('academy')) reply = "Akses ProSpace Academy, pelajari video/artikel, kerjakan kuis evaluasi, dan kumpulkan poin reward yang berlimpah!";
-            if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via Academy, Daily Check-in (+10), Selesai Master File (+50), dan Deep Work di Ruang Fokus (+25 per sesi).";
-        }
-        
-        setAiMessages([...newMsgs, { role: 'ai', text: reply }]);
-        setAiTyping(false);
-    }, 1200);
-  };
-
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -836,36 +849,48 @@ export default function App() {
     link.click();
   };
 
+  // --- LOGIC: PROSPACE AI MENTOR ---
+  const handleAiSubmit = async (e) => {
+    e.preventDefault();
+    if(!aiInput.trim()) return;
+
+    if (!aiConfig.isActive) return showToast("Fitur AI Mentor sedang dinonaktifkan oleh Admin.", "error");
+
+    const newMsgs = [...aiMessages, { role: 'user', text: aiInput }];
+    setAiMessages(newMsgs);
+    setAiInput('');
+    setAiTyping(true);
+
+    try {
+        const prompt = `Anda adalah 'ProSpace AI Mentor', asisten AI pintar khusus untuk member platform edukasi bisnis digital. Jawablah dengan bahasa Indonesia yang ramah, ringkas, dan jelas. \n\nPertanyaan User: ${aiInput}`;
+        const reply = await fetchFromAI(prompt);
+        setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
+    } catch(err) {
+        setAiMessages(prev => [...prev, { role: 'ai', text: "⚠️ Maaf, API Key belum dikonfigurasi oleh Admin. Saya belum bisa merespon pertanyaan kompleks Anda secara live. Mohon hubungi CS Helpdesk." }]);
+    }
+    setAiTyping(false);
+  };
+
   // --- LOGIC: AI MARKETING COPILOT GENERATOR ---
-  const handleGenerateCopy = (e) => {
+  const handleGenerateCopy = async (e) => {
       e.preventDefault();
       
       if (!aiConfig.isActive) return showToast("Fitur AI Copilot dinonaktifkan oleh Admin sementara waktu.", "error");
-      if (!aiConfig.apiKey) showToast("Peringatan: API Key belum diatur Admin. Menggunakan mode simulasi.", "error");
-
+      
       setIsGeneratingCopy(true);
       setCopilotResult('');
       
-      // Simulasi delay berfikir AI
-      setTimeout(() => {
+      try {
           const link = `https://domainanda.com/?ref=${user?.uid || '123'}`;
-          let text = '';
-          const p = copilotForm.product || 'ProSpace VIP';
+          const prompt = `Buatkan 1 teks copywriting promosi bahasa Indonesia untuk platform ${copilotForm.platform} dengan gaya penulisan ${copilotForm.tone}. Produk yang dijual adalah "${copilotForm.product}". Jangan gunakan markdown berlebihan (\`\`\`). Sertakan emoji secukupnya. Di kalimat paling akhir, arahkan pembaca untuk mengklik link ini: ${link}`;
           
-          if (copilotForm.platform === 'whatsapp') {
-              if(copilotForm.tone === 'fomo') text = `PENGUMUMAN PENTING! 🚨\n\nPromo spesial ${p} bakal ditutup HARI INI. Jangan sampai nyesel kelewatan akses VIP plus ribuan file master yang bisa bantu kamu cuan dari rumah!\n\nSlot sisa 5 orang lagi, buruan amankan di sini:\n👉 ${link}`;
-              else if(copilotForm.tone === 'santai') text = `Halo bro/sis! 👋 Lagi cari cara nambah skill digital & dapet komisi tambahan?\n\nCobain deh ${p}. Fiturnya lengkap banget, ada Academy, Ruang Fokus, sampai File Master siap pakai.\n\nCek aja dulu mumpung lagi ada diskon:\n👉 ${link}`;
-              else text = `Halo Bapak/Ibu,\n\nTingkatkan produktivitas dan keahlian digital Anda bersama ${p}. Platform All-in-One untuk profesional dan pebisnis.\n\nInfo selengkapnya & pendaftaran:\n👉 ${link}\n\nTerima kasih.`;
-          } else {
-              if(copilotForm.tone === 'fomo') text = `🔥 KESEMPATAN TERAKHIR! 🔥\n\nAkses ke ${p} bakal naik harga besok. Dapatkan ratusan modul, master file, dan komunitas VIP dalam satu tempat. 🚀\n\nJangan cuma jadi penonton, klik link di bio sekarang sebelum kehabisan! 👇\n\n🔗 ${link}\n\n#Diskon #KelasDigital #BisnisOnline #Marketing`;
-              else if(copilotForm.tone === 'santai') text = `Siapa bilang belajar skill digital itu susah dan mahal? 😎\n\nKenalin nih ${p}, platform asik buat kamu yang pengen upskill sambil kumpulin poin reward dan komisi! 💸\n\nYuk join bareng ribuan member lainnya. Klik link di bio ya! ✨\n\n🔗 ${link}\n\n#BelajarAsik #ProSpace #DigitalSkill`;
-              else text = `Investasi terbaik adalah leher ke atas. 📈\n\n${p} hadir sebagai solusi edukasi digital terintegrasi. Dilengkapi dengan LMS, Ruang Fokus, dan Katalog Master File untuk menunjang karir Anda.\n\nDaftar sekarang melalui tautan di bio kami.\n\n🔗 ${link}\n\n#EdukasiDigital #Karir #Profesional`;
-          }
-          
-          setCopilotResult(text);
-          setIsGeneratingCopy(false);
-          showToast("Copywriting berhasil dibuat!", "success");
-      }, 1500);
+          const result = await fetchFromAI(prompt);
+          setCopilotResult(result.trim());
+          showToast("Copywriting berhasil di-generate AI!", "success");
+      } catch (err) {
+          showToast(err.message || "Gagal memanggil API AI. Cek konfigurasi.", "error");
+      }
+      setIsGeneratingCopy(false);
   };
 
   // --- LOGIC: SIMPAN KONFIGURASI AI (ADMIN) ---
@@ -1046,7 +1071,7 @@ export default function App() {
               <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20} />} label="Dashboard" />
               <NavBtn active={activeTab==='elearning'} onClick={()=>{setActiveTab('elearning'); closeSidebarMobile();}} icon={<GraduationCap size={20} />} label="ProSpace Academy" />
               <NavBtn active={activeTab==='focus'} onClick={()=>{setActiveTab('focus'); closeSidebarMobile();}} icon={<Headphones size={20} />} label="Ruang Fokus VIP" />
-              <NavBtn active={activeTab==='quiz'} onClick={()=>{setActiveTab('quiz'); closeSidebarMobile();}} icon={<BookOpen size={20} />} label="Kuis Pintar Harian" />
+              <NavBtn active={activeTab==='quiz'} onClick={()=>{setActiveTab('quiz'); closeSidebarMobile();}} icon={<BookOpen size={20} />} label="Kuis AI Dinamis" />
               <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20} />} label="Komunitas VIP" />
               <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20} />} label="Katalog Master File" count={files.filter(f=>currentTier>=f.reqLevel).length} />
               <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20} />} label="Upgrade Paket" />
@@ -1389,7 +1414,7 @@ export default function App() {
                                                  <ImageIcon size={48} opacity={0.3} />
                                              </div>
                                              <div className="p-3 flex justify-between text-slate-700">
-                                                 <div className="flex gap-4"><Heart size={20} /><MessageCircle size={20} /><SendIcon size={20} /></div>
+                                                 <div className="flex gap-4"><Heart size={20} /><MessageCircle size={20} /><Send size={20} /></div>
                                                  <Bookmark size={20} className="text-slate-400"/>
                                              </div>
                                              <div className="px-4">
@@ -1513,52 +1538,71 @@ export default function App() {
              </div>
           )}
 
-          {/* TAB: DAILY QUIZ (V13 EDU-GAMIFICATION) */}
+          {/* TAB: KUIS AI DINAMIS EDUKASI */}
           {activeTab === 'quiz' && !isAdmin && (
              <div className="animate-fadeIn max-w-3xl mx-auto space-y-8">
                 <div className="text-center space-y-3 mb-10">
-                   <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2"><BookOpen size={32} /></div>
-                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Kuis Pintar Edukasi</h2>
-                   <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Asah wawasan digital Anda setiap hari. Jawab dengan benar dan dapatkan <strong className="text-emerald-600">+20 Poin Reward</strong>.</p>
+                   <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2 shadow-lg shadow-blue-100"><BookOpen size={32} /></div>
+                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Kuis Pintar <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Berbasis AI</span></h2>
+                   <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Asah wawasan Anda! Soal dibuat dinamis secara *real-time* oleh AI. Jawab benar untuk <strong className="text-emerald-600">+20 Poin Reward</strong> hari ini.</p>
                 </div>
 
-                <div className="bg-white rounded-[2.5rem] p-8 sm:p-12 border border-slate-200 shadow-2xl relative overflow-hidden">
-                    {userData?.lastQuizDate === new Date().toDateString() ? (
-                        <div className="text-center py-10">
-                            <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={40} /></div>
-                            <h3 className="text-2xl font-black text-slate-900 mb-2">Kuis Hari Ini Selesai!</h3>
-                            <p className="text-slate-500 mb-8">Berikut adalah jawaban dan penjelasan kuis hari ini:</p>
-                            
-                            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-left">
-                                <p className="font-bold text-slate-800 mb-4">{todayQuiz.q}</p>
-                                <p className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-1">Jawaban Benar:</p>
-                                <p className="text-slate-700 mb-4">{todayQuiz.options[todayQuiz.answer]}</p>
-                                <p className="text-sm font-black text-indigo-600 uppercase tracking-widest mb-1">Penjelasan Singkat:</p>
-                                <p className="text-slate-600 text-sm leading-relaxed">{todayQuiz.exp}</p>
-                            </div>
-                            <button onClick={()=>setActiveTab('dashboard')} className="mt-8 bg-slate-900 text-white px-8 py-4 rounded-xl font-black text-sm hover:bg-indigo-600 transition-colors">KEMBALI KE DASHBOARD</button>
+                <div className="bg-white rounded-[2.5rem] p-8 sm:p-12 border border-slate-200 shadow-2xl relative overflow-hidden min-h-[400px] flex flex-col justify-center">
+                    {!aiQuiz && !isGeneratingQuiz && (
+                        <div className="text-center">
+                            <MagicWand size={64} className="mx-auto text-indigo-200 mb-6" />
+                            <h3 className="text-2xl font-black text-slate-800 mb-4">Siap untuk tantangan hari ini?</h3>
+                            <button onClick={handleGenerateAIQuiz} className="bg-indigo-600 text-white font-black px-8 py-4 rounded-2xl shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-3 mx-auto">
+                                <Bot size={20} /> MINTA AI BUATKAN KUIS SEKARANG
+                            </button>
                         </div>
-                    ) : (
-                        <div>
+                    )}
+
+                    {isGeneratingQuiz && (
+                        <div className="text-center space-y-4">
+                            <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
+                            <p className="font-bold text-indigo-600 animate-pulse">AI sedang meracik pertanyaan khusus untuk Anda...</p>
+                        </div>
+                    )}
+
+                    {aiQuiz && !isGeneratingQuiz && (
+                        <div className="animate-fadeIn">
                             <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
-                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-full">KUIS HARI INI</span>
+                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-full flex items-center gap-1"><Bot size={12}/> AI GENERATED QUIZ</span>
                                 <span className="font-bold text-slate-400 text-xs">{new Date().toLocaleDateString('id-ID')}</span>
                             </div>
-                            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mb-8 leading-relaxed">{todayQuiz.q}</h3>
+                            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mb-8 leading-relaxed">{aiQuiz.q}</h3>
                             <div className="space-y-3">
-                                {todayQuiz.options.map((opt, idx) => (
+                                {aiQuiz.options.map((opt, idx) => (
                                     <button 
                                         key={idx} 
                                         onClick={() => handleAnswerQuiz(idx)}
-                                        disabled={isQuizProcessing}
-                                        className={`w-full text-left p-5 rounded-2xl border-2 font-bold text-sm sm:text-base transition-all hover:border-indigo-600 hover:bg-indigo-50 ${selectedQuizAnswer === idx ? 'border-indigo-600 bg-indigo-50 scale-[1.02]' : 'border-slate-200 bg-white'}`}
+                                        disabled={isQuizProcessing || selectedQuizAnswer !== null}
+                                        className={`w-full text-left p-5 rounded-2xl border-2 font-bold text-sm sm:text-base transition-all 
+                                            ${selectedQuizAnswer === idx ? (idx === aiQuiz.answer ? 'border-emerald-500 bg-emerald-50' : 'border-rose-500 bg-rose-50') : 'border-slate-200 bg-white hover:border-indigo-600'}
+                                            ${selectedQuizAnswer !== null && idx === aiQuiz.answer ? 'border-emerald-500 bg-emerald-50' : ''}
+                                        `}
                                     >
                                         <span className="inline-block w-8 h-8 bg-slate-100 text-slate-500 rounded-full text-center leading-8 mr-4">{['A','B','C','D'][idx]}</span>
                                         {opt}
+                                        {selectedQuizAnswer !== null && idx === aiQuiz.answer && <CheckCircle2 className="inline float-right text-emerald-500 mt-1" size={20} />}
+                                        {selectedQuizAnswer === idx && idx !== aiQuiz.answer && <XCircle className="inline float-right text-rose-500 mt-1" size={20} />}
                                     </button>
                                 ))}
                             </div>
-                            {isQuizProcessing && <p className="text-center text-sm font-bold text-indigo-600 mt-6 animate-pulse">Menyimpan Poin Anda...</p>}
+                            
+                            {isQuizProcessing && <p className="text-center text-sm font-bold text-indigo-600 mt-6 animate-pulse">Menilai Jawaban Anda...</p>}
+                            
+                            {selectedQuizAnswer !== null && !isQuizProcessing && (
+                                <div className="mt-8 bg-slate-50 p-6 rounded-2xl border border-slate-100 animate-slideUp">
+                                    <p className="text-sm font-black text-indigo-600 uppercase tracking-widest mb-2">Penjelasan AI:</p>
+                                    <p className="text-slate-700 font-medium leading-relaxed">{aiQuiz.exp}</p>
+                                    
+                                    <button onClick={handleGenerateAIQuiz} className="mt-6 text-sm font-black text-indigo-600 hover:underline flex items-center gap-1">
+                                        <RefreshCw size={14} /> GENERATE KUIS LAIN (LATIHAN)
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1973,7 +2017,7 @@ export default function App() {
                             {!aiConfig.apiKey && (
                                 <div className="mt-auto bg-amber-500 bg-opacity-20 border border-amber-500 border-opacity-50 p-4 rounded-xl text-amber-300 text-xs font-bold flex gap-3">
                                     <AlertCircle size={24} className="shrink-0" />
-                                    <p>Sistem berjalan dalam mode simulasi/mockup karena API Key kosong.</p>
+                                    <p>AI belum bisa digunakan karena API Key masih kosong.</p>
                                 </div>
                             )}
                         </div>
@@ -2007,7 +2051,7 @@ export default function App() {
                                         onChange={e => setAiConfig({...aiConfig, apiKey: e.target.value})} 
                                         className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm tracking-widest" 
                                     />
-                                    <p className="text-[10px] text-slate-400 font-bold">*Kunci rahasia API Anda tersimpan di Firestore environment dan tidak dibagikan ke sisi client non-admin.</p>
+                                    <p className="text-[10px] text-slate-400 font-bold">*Kunci rahasia API Anda tersimpan di database dan tidak terekspos ke frontend member non-admin.</p>
                                 </div>
                             </div>
                             
