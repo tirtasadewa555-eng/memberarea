@@ -297,7 +297,7 @@ export default function App() {
 
       try {
           if (aiConfig.provider === 'gemini') {
-              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${aiConfig.apiKey}`, {
+              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${aiConfig.apiKey}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
@@ -2036,7 +2036,7 @@ export default function App() {
                                                 onClick={() => setAiConfig({...aiConfig, provider: prov})}
                                                 className={`p-4 rounded-2xl border-2 text-sm font-black capitalize transition-all ${aiConfig.provider === prov ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300'}`}
                                             >
-                                                {prov} {prov === 'openai' ? '(GPT-4)' : prov === 'gemini' ? '(Pro 1.5)' : '(Claude 3)'}
+                                                {prov} {prov === 'openai' ? '(GPT-4)' : prov === 'gemini' ? '(Flash Free)' : '(Claude 3)'}
                                             </button>
                                         ))}
                                     </div>
