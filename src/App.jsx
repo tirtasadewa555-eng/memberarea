@@ -20,7 +20,7 @@ import {
   MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, HelpCircle, CheckCircle2, ListPlus,
-  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark // ICON BARU UNTUK AI COPILOT
+  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, Cpu, Key // ICON BARU UNTUK AI & API KEY
 } from 'lucide-react';
 
 // ==========================================
@@ -163,6 +163,9 @@ export default function App() {
   const [copilotForm, setCopilotForm] = useState({ product: 'ProSpace VIP', platform: 'whatsapp', tone: 'fomo' });
   const [copilotResult, setCopilotResult] = useState('');
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
+
+  // --- Fitur Baru: Admin AI Configuration ---
+  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
 
   // --- Ruang Fokus VIP States ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
@@ -378,7 +381,11 @@ export default function App() {
     const qTix = isAdmin ? collection(db, 'artifacts', appId, 'public', 'data', 'tickets') : query(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), where('userId', '==', user.uid));
     const unsubTickets = onSnapshot(qTix, (s) => setTickets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); adminUnsub(); };
+    const unsubAi = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), (d) => {
+        if (d.exists()) setAiConfig(d.data());
+    });
+
+    return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); adminUnsub(); };
   }, [user, isAdmin]);
 
   // --- Pomodoro Timer Engine ---
@@ -770,18 +777,26 @@ export default function App() {
   const handleAiSubmit = (e) => {
     e.preventDefault();
     if(!aiInput.trim()) return;
+
+    if (!aiConfig.isActive) return showToast("Fitur AI Mentor sedang dinonaktifkan oleh Admin.", "error");
+
     const newMsgs = [...aiMessages, { role: 'user', text: aiInput }];
     setAiMessages(newMsgs);
     setAiInput('');
     setAiTyping(true);
     setTimeout(() => {
         let reply = "Maaf, silakan hubungi Admin untuk pertanyaan teknis mendalam.";
-        const low = aiInput.toLowerCase();
-        if(low.includes('halo') || low.includes('hai')) reply = "Halo! Ada yang bisa AI bantu?";
-        if(low.includes('komisi') || low.includes('afiliasi')) reply = "Komisi afiliasi sebesar 20% diberikan saat penjualan via link Anda selesai divalidasi. Cek menu Program Afiliasi.";
-        if(low.includes('sertifikat')) reply = "Sertifikat terbuka jika progress materi mencapai 100%. Teruslah belajar!";
-        if(low.includes('kuis') || low.includes('belajar') || low.includes('academy')) reply = "Akses ProSpace Academy, pelajari video/artikel, kerjakan kuis evaluasi, dan kumpulkan poin reward yang berlimpah!";
-        if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via Academy, Daily Check-in (+10), Selesai Master File (+50), dan Deep Work di Ruang Fokus (+25 per sesi).";
+        
+        if (!aiConfig.apiKey) {
+            reply = "⚠️ Sistem AI berjalan dalam 'Mode Simulasi' karena Admin belum memasukkan API Key di pengaturan.";
+        } else {
+            const low = aiInput.toLowerCase();
+            if(low.includes('halo') || low.includes('hai')) reply = "Halo! Ada yang bisa AI bantu?";
+            if(low.includes('komisi') || low.includes('afiliasi')) reply = "Komisi afiliasi sebesar 20% diberikan saat penjualan via link Anda selesai divalidasi. Cek menu Program Afiliasi.";
+            if(low.includes('sertifikat')) reply = "Sertifikat terbuka jika progress materi mencapai 100%. Teruslah belajar!";
+            if(low.includes('kuis') || low.includes('belajar') || low.includes('academy')) reply = "Akses ProSpace Academy, pelajari video/artikel, kerjakan kuis evaluasi, dan kumpulkan poin reward yang berlimpah!";
+            if(low.includes('poin') || low.includes('fokus') || low.includes('rank')) reply = "Kumpulkan poin via Academy, Daily Check-in (+10), Selesai Master File (+50), dan Deep Work di Ruang Fokus (+25 per sesi).";
+        }
         
         setAiMessages([...newMsgs, { role: 'ai', text: reply }]);
         setAiTyping(false);
@@ -824,6 +839,10 @@ export default function App() {
   // --- LOGIC: AI MARKETING COPILOT GENERATOR ---
   const handleGenerateCopy = (e) => {
       e.preventDefault();
+      
+      if (!aiConfig.isActive) return showToast("Fitur AI Copilot dinonaktifkan oleh Admin sementara waktu.", "error");
+      if (!aiConfig.apiKey) showToast("Peringatan: API Key belum diatur Admin. Menggunakan mode simulasi.", "error");
+
       setIsGeneratingCopy(true);
       setCopilotResult('');
       
@@ -849,6 +868,16 @@ export default function App() {
       }, 1500);
   };
 
+  // --- LOGIC: SIMPAN KONFIGURASI AI (ADMIN) ---
+  const handleSaveAiConfig = async (e) => {
+      e.preventDefault();
+      try {
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), aiConfig);
+          showToast("Konfigurasi AI dan API Key berhasil disimpan!");
+      } catch (err) {
+          showToast("Gagal menyimpan konfigurasi AI", "error");
+      }
+  };
 
   const closeSidebarMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
 
@@ -1007,6 +1036,7 @@ export default function App() {
               
               <NavBtn active={activeTab==='admin_academy'} onClick={()=>{setActiveTab('admin_academy'); closeSidebarMobile();}} icon={<GraduationCap size={20} />} label="Kelola Academy LMS" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20} />} label="Kelola Master File" />
+              <NavBtn active={activeTab==='admin_ai_config'} onClick={()=>{setActiveTab('admin_ai_config'); closeSidebarMobile();}} icon={<Cpu size={20} />} label="Pengaturan API & AI" />
               
               <div className="my-6 border-b border-slate-100"></div>
             </>
@@ -1909,6 +1939,85 @@ export default function App() {
                          </div>
                       ))}
                    </div>
+                </div>
+             </div>
+          )}
+
+          {/* TAB: ADMIN AI CONFIGURATION (JENIUS) */}
+          {activeTab === 'admin_ai_config' && isAdmin && (
+             <div className="animate-fadeIn space-y-10">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                   <div>
+                       <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] flex items-center gap-3">
+                          <Cpu className="text-indigo-600" size={32} /> Konfigurasi Mesin AI
+                       </h2>
+                       <p className="text-slate-500 font-medium mt-2">Kelola API Key (OpenAI, Gemini, Anthropic) untuk fitur AI Copilot & AI Mentor.</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-1">
+                        <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden h-full">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 opacity-20 blur-3xl rounded-full"></div>
+                            <Cpu size={48} className={`mb-6 ${aiConfig.isActive ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+                            <h3 className="text-2xl font-black mb-2">Status AI Server</h3>
+                            <p className="text-sm text-slate-400 leading-relaxed mb-8">
+                                Jika dinonaktifkan, seluruh fitur yang menggunakan token AI pada member area akan dikunci otomatis untuk menghemat biaya API (Cost Control).
+                            </p>
+                            
+                            <div className="bg-slate-800 p-1 rounded-2xl flex items-center mb-6">
+                                <button onClick={() => setAiConfig({...aiConfig, isActive: true})} className={`flex-1 py-3 rounded-xl text-xs font-black tracking-widest transition-all ${aiConfig.isActive ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>AKTIF</button>
+                                <button onClick={() => setAiConfig({...aiConfig, isActive: false})} className={`flex-1 py-3 rounded-xl text-xs font-black tracking-widest transition-all ${!aiConfig.isActive ? 'bg-rose-500 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>MATI</button>
+                            </div>
+
+                            {!aiConfig.apiKey && (
+                                <div className="mt-auto bg-amber-500 bg-opacity-20 border border-amber-500 border-opacity-50 p-4 rounded-xl text-amber-300 text-xs font-bold flex gap-3">
+                                    <AlertCircle size={24} className="shrink-0" />
+                                    <p>Sistem berjalan dalam mode simulasi/mockup karena API Key kosong.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-2">
+                        <form onSubmit={handleSaveAiConfig} className="bg-white rounded-[2.5rem] shadow-xl border border-slate-200 p-8 sm:p-10 space-y-8">
+                            <div className="space-y-6">
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Cpu size={14} /> Provider AI Model</label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        {['openai', 'gemini', 'anthropic'].map(prov => (
+                                            <button 
+                                                key={prov}
+                                                type="button"
+                                                onClick={() => setAiConfig({...aiConfig, provider: prov})}
+                                                className={`p-4 rounded-2xl border-2 text-sm font-black capitalize transition-all ${aiConfig.provider === prov ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300'}`}
+                                            >
+                                                {prov} {prov === 'openai' ? '(GPT-4)' : prov === 'gemini' ? '(Pro 1.5)' : '(Claude 3)'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Key size={14} /> Secret API Key</label>
+                                    <input 
+                                        type="password" 
+                                        placeholder="sk-..." 
+                                        value={aiConfig.apiKey} 
+                                        onChange={e => setAiConfig({...aiConfig, apiKey: e.target.value})} 
+                                        className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm tracking-widest" 
+                                    />
+                                    <p className="text-[10px] text-slate-400 font-bold">*Kunci rahasia API Anda tersimpan di Firestore environment dan tidak dibagikan ke sisi client non-admin.</p>
+                                </div>
+                            </div>
+                            
+                            <div className="pt-8 border-t border-slate-100">
+                                <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                                    <Save size={20} /> SIMPAN PENGATURAN AI
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
              </div>
           )}
