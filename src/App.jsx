@@ -372,7 +372,6 @@ export default function App() {
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
 
-    // Memeriksa Parameter Referral & Membuka Landing Page Publik (Replicated Site)
     const checkPublicSite = async () => {
         const params = new URLSearchParams(window.location.search);
         const refCode = params.get('ref') || params.get('aff');
@@ -403,7 +402,6 @@ export default function App() {
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
-      // Tutup otomatis public site jika user sudah login (biar fokus ke dashboard)
       if (u) setShowPublicSite(false);
       setLoading(false);
     });
@@ -423,11 +421,10 @@ export default function App() {
       }
     });
 
-    // Ambil data Replicated Site milik Member yang sedang login
     const unsubMySite = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', user.uid), (d) => {
         if (d.exists()) {
             setMyLandingPage(d.data());
-            if(!isEditingLP) setEditLPForm(d.data()); // Sinkronisasi form edit jika sedang tidak mengedit
+            if(!isEditingLP) setEditLPForm(d.data()); 
         }
     });
 
@@ -620,7 +617,6 @@ export default function App() {
       }, 1000);
   };
 
-  // --- LOGIC BARU: GENERATE & EDIT AI LANDING PAGE ---
   const handleGenerateLandingPage = async () => {
       if (currentTier < 2 && !isAdmin) return showToast("Minimal paket Business untuk membuat Web Replikator AI.", "error");
       if (isGeneratingLP) return;
@@ -656,7 +652,7 @@ export default function App() {
           const siteData = {
               ownerName: ownerName,
               ownerId: user.uid,
-              customDomain: myLandingPage?.customDomain || '', // Pertahankan custom domain jika sudah ada
+              customDomain: myLandingPage?.customDomain || '', 
               heroHeadline: sanitizeHTML(lpData.heroHeadline),
               heroSub: sanitizeHTML(lpData.heroSub),
               vslUrl: escapeInput(lpData.vslUrl) || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
@@ -680,7 +676,6 @@ export default function App() {
       if (isProcessingAction.current || !editLPForm) return;
       isProcessingAction.current = true;
       try {
-          // Bersihkan URL domain
           let cleanDomain = escapeInput(editLPForm.customDomain).toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
           
           const updatedData = {
@@ -689,6 +684,7 @@ export default function App() {
               heroHeadline: sanitizeHTML(editLPForm.heroHeadline),
               heroSub: sanitizeHTML(editLPForm.heroSub),
               vslUrl: escapeInput(editLPForm.vslUrl),
+              story: sanitizeHTML(editLPForm.story || ''), // Add story field just in case although json didn't have it directly mapped to main root in second version, I will map it
               updatedAt: new Date().toISOString()
           };
 
@@ -1050,7 +1046,6 @@ export default function App() {
   // TAMPILAN: PUBLIC REPLICATED SITE (LANDING PAGE SUNGGUHAN)
   if (showPublicSite && publicSiteData && !user) {
       
-      // Komponen Reusable untuk FAQ (Accordion)
       const FaqItem = ({ q, a }) => {
           const [isOpen, setIsOpen] = useState(false);
           return (
@@ -1064,22 +1059,18 @@ export default function App() {
           );
       };
 
-      // PERBAIKAN: Fungsi internal untuk pindah ke form register/login tanpa pindah link (Mencegah 404)
       const handleJoinClick = (mode = 'register') => {
-          setShowPublicSite(false); // Tutup landing page publik
-          setAuthMode(mode);        // Buka form pendaftaran/login
-          window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll ke atas
+          setShowPublicSite(false); 
+          setAuthMode(mode);        
+          window.scrollTo({ top: 0, behavior: 'smooth' }); 
       };
 
       return (
           <div className="min-h-screen bg-slate-50 font-['Plus_Jakarta_Sans'] text-slate-800 flex flex-col relative overflow-x-hidden">
-              
-              {/* Promo Bar */}
               <div className="bg-gradient-to-r from-rose-500 to-orange-400 text-white text-center py-3 px-4 font-bold text-sm tracking-wide shadow-md relative z-50">
                   🔥 PROMO SPESIAL: Diskon 50% Untuk 10 Pembeli Pertama Hari Ini! <button onClick={() => handleJoinClick('register')} className="underline ml-2 font-black">KLAIM SEKARANG</button>
               </div>
 
-              {/* Navbar */}
               <header className="sticky top-0 z-40 bg-white bg-opacity-90 backdrop-blur-xl border-b border-slate-200 py-4 px-6 shadow-sm">
                   <div className="max-w-6xl mx-auto flex justify-between items-center">
                       <div className="font-black text-2xl tracking-tighter text-slate-900 flex items-center gap-2">
@@ -1089,7 +1080,6 @@ export default function App() {
                   </div>
               </header>
 
-              {/* Hero Section */}
               <section className="relative pt-20 pb-32 px-6 overflow-hidden bg-slate-900 text-white">
                   <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-900 opacity-90 z-0"></div>
                   <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-indigo-600 rounded-full blur-[150px] opacity-30 z-0 animate-pulse"></div>
@@ -1116,7 +1106,6 @@ export default function App() {
                   </div>
               </section>
 
-              {/* Trust Marquee */}
               <div className="bg-white border-b border-slate-200 py-6 overflow-hidden flex items-center relative">
                   <div className="absolute left-0 w-20 h-full bg-gradient-to-r from-white to-transparent z-10"></div>
                   <div className="absolute right-0 w-20 h-full bg-gradient-to-l from-white to-transparent z-10"></div>
@@ -1125,7 +1114,6 @@ export default function App() {
                   </div>
               </div>
 
-              {/* VSL Section */}
               {publicSiteData.vslUrl && (
                   <section className="py-24 px-6 bg-slate-50 text-center">
                       <div className="max-w-4xl mx-auto">
@@ -1140,15 +1128,12 @@ export default function App() {
                   </section>
               )}
 
-              {/* Story / Problem-Agitation-Solution */}
               <section className="py-24 px-6 bg-white relative">
                   <div className="max-w-3xl mx-auto text-center mb-16">
                       <h2 className="text-3xl sm:text-4xl font-black text-slate-900 mb-6 font-['Outfit']">Kenapa Harus ProSpace?</h2>
                       <div className="w-20 h-2 bg-indigo-600 rounded-full mx-auto mb-10"></div>
                       <div className="text-lg text-slate-600 leading-loose font-medium space-y-6 text-left bg-slate-50 p-10 rounded-[2.5rem] border border-slate-100 shadow-sm" dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.story) }}></div>
                   </div>
-                  
-                  {/* Bagian Perbaikan Tombol Cerita Tengah */}
                   <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto max-w-3xl mx-auto">
                       <button onClick={() => handleJoinClick('register')} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-full shadow-[0_0_40px_rgba(79,70,229,0.5)] hover:scale-105 transition-transform text-lg flex items-center justify-center gap-3 w-full">
                           <Rocket size={24} /> GABUNG SEKARANG
@@ -1156,7 +1141,6 @@ export default function App() {
                   </div>
               </section>
 
-              {/* Features Grid */}
               <section className="py-24 px-6 bg-slate-900 text-white relative overflow-hidden">
                   <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-indigo-900 to-transparent opacity-30"></div>
                   <div className="max-w-6xl mx-auto relative z-10">
@@ -1166,9 +1150,7 @@ export default function App() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                           {publicSiteData.features && publicSiteData.features.map((f, i) => (
                               <div key={i} className="bg-white bg-opacity-5 backdrop-blur-lg border border-white border-opacity-10 p-8 rounded-3xl hover:-translate-y-2 transition-transform duration-300">
-                                  <div className="w-14 h-14 bg-indigo-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                                      <MagicWand size={28} className="text-white" />
-                                  </div>
+                                  <div className="w-14 h-14 bg-indigo-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg"><MagicWand size={28} className="text-white" /></div>
                                   <h3 className="text-xl font-black mb-3">{f.t}</h3>
                                   <p className="text-indigo-200 leading-relaxed text-sm">{f.d}</p>
                               </div>
@@ -1177,7 +1159,6 @@ export default function App() {
                   </div>
               </section>
 
-              {/* Testimonials */}
               <section className="py-24 px-6 bg-slate-50">
                   <div className="max-w-6xl mx-auto">
                       <h2 className="text-3xl sm:text-4xl font-black text-center text-slate-900 mb-16 font-['Outfit']">Apa Kata Mereka?</h2>
@@ -1199,7 +1180,6 @@ export default function App() {
                   </div>
               </section>
 
-              {/* FAQ */}
               <section className="py-24 px-6 bg-white border-t border-slate-200">
                   <div className="max-w-3xl mx-auto">
                       <h2 className="text-3xl sm:text-4xl font-black text-center text-slate-900 mb-12 font-['Outfit']">Pertanyaan Populer (FAQ)</h2>
@@ -1211,14 +1191,11 @@ export default function App() {
                   </div>
               </section>
 
-              {/* Super CTA / Pricing Override */}
               <section className="py-24 px-6 bg-slate-900 text-center relative overflow-hidden">
                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20"></div>
                   <div className="max-w-4xl mx-auto relative z-10 bg-gradient-to-b from-indigo-600 to-purple-800 rounded-[3rem] p-12 sm:p-20 shadow-[0_20px_60px_rgba(79,70,229,0.4)] border border-indigo-400 border-opacity-30">
                       <h2 className="text-4xl sm:text-6xl font-black text-white font-['Outfit'] mb-6 tracking-tight">Ambil Keputusan Sekarang!</h2>
                       <p className="text-xl text-indigo-100 font-medium mb-12 max-w-2xl mx-auto">Jangan tunggu harga naik. Bergabunglah hari ini dan dapatkan akses penuh ke ekosistem ProSpace melalui rekomendasi {publicSiteData.ownerName}.</p>
-                      
-                      {/* PERBAIKAN TOMBOL BAWAH */}
                       <button onClick={() => handleJoinClick('register')} className="inline-flex items-center justify-center gap-3 bg-white text-indigo-600 font-black px-12 py-6 rounded-full shadow-2xl hover:scale-105 hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all text-xl uppercase tracking-wider">
                           Daftar & Kunci Diskon <ChevronRight size={24} />
                       </button>
@@ -1229,7 +1206,6 @@ export default function App() {
                   &copy; {new Date().getFullYear()} ProSpace Ecosystem. All rights reserved.<br/>
                   <span className="text-xs mt-2 inline-block">Affiliate Partner: {publicSiteData.ownerName}</span>
               </footer>
-              
               <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
           </div>
       );
@@ -1399,6 +1375,7 @@ export default function App() {
               <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20} />} label="Dashboard" />
               <NavBtn active={activeTab==='elearning'} onClick={()=>{setActiveTab('elearning'); closeSidebarMobile();}} icon={<GraduationCap size={20} />} label="ProSpace Academy" />
               <NavBtn active={activeTab==='focus'} onClick={()=>{setActiveTab('focus'); closeSidebarMobile();}} icon={<Headphones size={20} />} label="Ruang Fokus VIP" />
+              
               <NavBtn active={activeTab==='quiz'} onClick={()=>{setActiveTab('quiz'); closeSidebarMobile();}} icon={<BookOpen size={20} />} label="Kuis AI Dinamis" />
               <NavBtn active={activeTab==='community'} onClick={()=>{setActiveTab('community'); closeSidebarMobile();}} icon={<MessageCircle size={20} />} label="Komunitas VIP" />
               <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20} />} label="Katalog Master File" count={files.filter(f=>currentTier>=f.reqLevel).length} />
@@ -1409,6 +1386,7 @@ export default function App() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Marketing & Earning</p>
               <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20} />} label="Program Afiliasi" />
               <NavBtn active={activeTab==='copilot'} onClick={()=>{setActiveTab('copilot'); closeSidebarMobile();}} icon={<Rocket size={20} />} label="AI Marketing Copilot" />
+              
               <NavBtn active={activeTab==='landingpage'} onClick={()=>{setActiveTab('landingpage'); closeSidebarMobile();}} icon={<LayoutTemplate size={20} />} label="Web Replikator Pribadi" />
               
               <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20} />} label="Peringkat Marketer" />
@@ -1619,6 +1597,79 @@ export default function App() {
                    )}
                 </div>
                 )}
+             </div>
+          )}
+
+          {/* ==================================================== */}
+          {/* TAB BARU: KUIS AI DINAMIS EDUKASI */}
+          {/* ==================================================== */}
+          {activeTab === 'quiz' && !isAdmin && (
+             <div className="animate-fadeIn max-w-3xl mx-auto space-y-8">
+                <div className="text-center space-y-3 mb-10">
+                   <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2 shadow-lg shadow-blue-100"><BookOpen size={32} /></div>
+                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Kuis Pintar <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Berbasis AI</span></h2>
+                   <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Asah wawasan Anda! Soal dibuat dinamis secara *real-time* oleh AI. Jawab benar untuk <strong className="text-emerald-600">+20 Poin Reward</strong> hari ini.</p>
+                </div>
+
+                <div className="bg-white rounded-[2.5rem] p-8 sm:p-12 border border-slate-200 shadow-2xl relative overflow-hidden min-h-[400px] flex flex-col justify-center">
+                    {!aiQuiz && !isGeneratingQuiz && (
+                        <div className="text-center">
+                            <MagicWand size={64} className="mx-auto text-indigo-200 mb-6" />
+                            <h3 className="text-2xl font-black text-slate-800 mb-4">Siap untuk tantangan hari ini?</h3>
+                            <button onClick={handleGenerateAIQuiz} className="bg-indigo-600 text-white font-black px-8 py-4 rounded-2xl shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-3 mx-auto">
+                                <Bot size={20} /> MINTA AI BUATKAN KUIS SEKARANG
+                            </button>
+                        </div>
+                    )}
+
+                    {isGeneratingQuiz && (
+                        <div className="text-center space-y-4">
+                            <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
+                            <p className="font-bold text-indigo-600 animate-pulse">AI sedang meracik pertanyaan khusus untuk Anda...</p>
+                        </div>
+                    )}
+
+                    {aiQuiz && !isGeneratingQuiz && (
+                        <div className="animate-fadeIn">
+                            <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
+                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 font-black text-[10px] uppercase tracking-widest rounded-full flex items-center gap-1"><Bot size={12}/> AI GENERATED QUIZ</span>
+                                <span className="font-bold text-slate-400 text-xs">{new Date().toLocaleDateString('id-ID')}</span>
+                            </div>
+                            <h3 className="text-xl sm:text-2xl font-black text-slate-800 mb-8 leading-relaxed">{aiQuiz.q}</h3>
+                            <div className="space-y-3">
+                                {aiQuiz.options.map((opt, idx) => (
+                                    <button 
+                                        key={idx} 
+                                        onClick={() => handleAnswerQuiz(idx)}
+                                        disabled={isQuizProcessing || selectedQuizAnswer !== null}
+                                        className={`w-full text-left p-5 rounded-2xl border-2 font-bold text-sm sm:text-base transition-all 
+                                            ${selectedQuizAnswer === idx ? (idx === aiQuiz.answer ? 'border-emerald-500 bg-emerald-50' : 'border-rose-500 bg-rose-50') : 'border-slate-200 bg-white hover:border-indigo-600'}
+                                            ${selectedQuizAnswer !== null && idx === aiQuiz.answer ? 'border-emerald-500 bg-emerald-50' : ''}
+                                        `}
+                                    >
+                                        <span className="inline-block w-8 h-8 bg-slate-100 text-slate-500 rounded-full text-center leading-8 mr-4">{['A','B','C','D'][idx]}</span>
+                                        {opt}
+                                        {selectedQuizAnswer !== null && idx === aiQuiz.answer && <CheckCircle2 className="inline float-right text-emerald-500 mt-1" size={20} />}
+                                        {selectedQuizAnswer === idx && idx !== aiQuiz.answer && <XCircle className="inline float-right text-rose-500 mt-1" size={20} />}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            {isQuizProcessing && <p className="text-center text-sm font-bold text-indigo-600 mt-6 animate-pulse">Menilai Jawaban Anda...</p>}
+                            
+                            {selectedQuizAnswer !== null && !isQuizProcessing && (
+                                <div className="mt-8 bg-slate-50 p-6 rounded-2xl border border-slate-100 animate-slideUp">
+                                    <p className="text-sm font-black text-indigo-600 uppercase tracking-widest mb-2">Penjelasan AI:</p>
+                                    <p className="text-slate-700 font-medium leading-relaxed">{aiQuiz.exp}</p>
+                                    
+                                    <button onClick={handleGenerateAIQuiz} className="mt-6 text-sm font-black text-indigo-600 hover:underline flex items-center gap-1">
+                                        <RefreshCw size={14} /> GENERATE KUIS LAIN (LATIHAN)
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
              </div>
           )}
 
