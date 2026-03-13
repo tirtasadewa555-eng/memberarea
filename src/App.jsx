@@ -20,7 +20,7 @@ import {
   MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, HelpCircle, CheckCircle2, ListPlus,
-  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, Cpu, Key, Sparkles as MagicWand
+  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, Cpu, Key, Sparkles as MagicWand, Link as LinkIcon
 } from 'lucide-react';
 
 // ==========================================
@@ -156,6 +156,7 @@ export default function App() {
 
   // --- Fitur Admin AI Configuration ---
   const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
+  const [isTestingApi, setIsTestingApi] = useState(false);
 
   // --- Fitur AI Kuis Pintar Edukasi ---
   const [aiQuiz, setAiQuiz] = useState(null);
@@ -297,9 +298,13 @@ export default function App() {
 
       try {
           if (aiConfig.provider === 'gemini') {
-              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${aiConfig.apiKey}`, {
+              // Menggunakan endpoint Gemini Flash Free dan mengoper API Key via header sesuai standar cURL
+              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 
+                      'Content-Type': 'application/json',
+                      'x-goog-api-key': aiConfig.apiKey
+                  },
                   body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
               });
               const data = await res.json();
@@ -866,7 +871,7 @@ export default function App() {
         const reply = await fetchFromAI(prompt);
         setAiMessages(prev => [...prev, { role: 'ai', text: reply }]);
     } catch(err) {
-        setAiMessages(prev => [...prev, { role: 'ai', text: "⚠️ Maaf, API Key belum dikonfigurasi oleh Admin. Saya belum bisa merespon pertanyaan kompleks Anda secara live. Mohon hubungi CS Helpdesk." }]);
+        setAiMessages(prev => [...prev, { role: 'ai', text: "⚠️ Maaf, API Key belum dikonfigurasi atau tidak valid. Silakan hubungi CS Helpdesk." }]);
     }
     setAiTyping(false);
   };
@@ -893,7 +898,39 @@ export default function App() {
       setIsGeneratingCopy(false);
   };
 
-  // --- LOGIC: SIMPAN KONFIGURASI AI (ADMIN) ---
+  // --- LOGIC: SIMPAN & TEST KONFIGURASI AI (ADMIN) ---
+  const handleTestApiConnection = async () => {
+      if (!aiConfig.apiKey) return showToast("Masukkan API Key terlebih dahulu!", "error");
+      setIsTestingApi(true);
+      try {
+          // Melakukan pemanggilan tes secara independen menggunakan header
+          let reply = "";
+          if (aiConfig.provider === 'gemini') {
+              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-goog-api-key': aiConfig.apiKey },
+                  body: JSON.stringify({ contents: [{ parts: [{ text: "Berikan respon persis 1 kata: 'BERHASIL'" }] }] })
+              });
+              const data = await res.json();
+              if(data.error) throw new Error(data.error.message);
+              reply = data.candidates[0].content.parts[0].text;
+          } else if (aiConfig.provider === 'openai') {
+              const res = await fetch(`https://api.openai.com/v1/chat/completions`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiConfig.apiKey}` },
+                  body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{role:'user', content:"Berikan respon persis 1 kata: 'BERHASIL'"}] })
+              });
+              const data = await res.json();
+              if(data.error) throw new Error(data.error.message);
+              reply = data.choices[0].message.content;
+          }
+          showToast(`Koneksi Sukses! Respon AI: ${reply.trim()}`, "success");
+      } catch (err) {
+          showToast(`Gagal Konek: ${err.message}`, "error");
+      }
+      setIsTestingApi(false);
+  };
+
   const handleSaveAiConfig = async (e) => {
       e.preventDefault();
       try {
@@ -903,6 +940,7 @@ export default function App() {
           showToast("Gagal menyimpan konfigurasi AI", "error");
       }
   };
+
 
   const closeSidebarMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
 
@@ -1027,7 +1065,7 @@ export default function App() {
                    {aiMessages.map((m, i) => (
                       <div key={i} className={`max-w-[85%] p-3 rounded-2xl text-sm ${m.role === 'ai' ? 'bg-white border self-start rounded-tl-none' : 'bg-indigo-600 text-white self-end rounded-tr-none shadow-md'}`}>{m.text}</div>
                    ))}
-                   {aiTyping && <div className="p-3 bg-white border self-start rounded-2xl rounded-tl-none italic text-xs text-slate-400">Mengetik...</div>}
+                   {aiTyping && <div className="p-3 bg-white border self-start rounded-2xl rounded-tl-none italic text-xs text-slate-400">Sedang mengetik...</div>}
                    <div ref={aiEndRef} />
                 </div>
                 <form onSubmit={handleAiSubmit} className="p-3 bg-white border-t flex gap-2">
@@ -1995,7 +2033,7 @@ export default function App() {
                        <h2 className="text-3xl font-black text-slate-900 font-['Outfit'] flex items-center gap-3">
                           <Cpu className="text-indigo-600" size={32} /> Konfigurasi Mesin AI
                        </h2>
-                       <p className="text-slate-500 font-medium mt-2">Kelola API Key (OpenAI, Gemini, Anthropic) untuk fitur AI Copilot & AI Mentor.</p>
+                       <p className="text-slate-500 font-medium mt-2">Kelola API Key (OpenAI, Gemini, Anthropic) untuk fitur AI Copilot, Kuis Pintar, & AI Mentor.</p>
                    </div>
                 </div>
 
@@ -2024,7 +2062,7 @@ export default function App() {
                     </div>
 
                     <div className="lg:col-span-2">
-                        <form onSubmit={handleSaveAiConfig} className="bg-white rounded-[2.5rem] shadow-xl border border-slate-200 p-8 sm:p-10 space-y-8">
+                        <form onSubmit={handleSaveAiConfig} className="bg-white rounded-[2.5rem] shadow-xl border border-slate-200 p-8 sm:p-10 space-y-8 flex flex-col h-full justify-between">
                             <div className="space-y-6">
                                 <div className="space-y-3">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Cpu size={14} /> Provider AI Model</label>
@@ -2043,20 +2081,28 @@ export default function App() {
                                 </div>
 
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Key size={14} /> Secret API Key</label>
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Key size={14} /> Secret API Key</label>
+                                        {aiConfig.provider === 'gemini' && (
+                                           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-indigo-600 hover:underline flex items-center gap-1"><LinkIcon size={10} /> Dapatkan Free Key</a>
+                                        )}
+                                    </div>
                                     <input 
                                         type="password" 
-                                        placeholder="sk-..." 
+                                        placeholder="Tempel API Key rahasia di sini..." 
                                         value={aiConfig.apiKey} 
                                         onChange={e => setAiConfig({...aiConfig, apiKey: e.target.value})} 
                                         className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm tracking-widest" 
                                     />
-                                    <p className="text-[10px] text-slate-400 font-bold">*Kunci rahasia API Anda tersimpan di database dan tidak terekspos ke frontend member non-admin.</p>
+                                    <p className="text-[10px] text-slate-400 font-bold">*Kunci API hanya disimpan di sistem database dan tidak terekspos ke perangkat member non-admin.</p>
                                 </div>
                             </div>
                             
-                            <div className="pt-8 border-t border-slate-100">
-                                <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                            <div className="flex flex-col sm:flex-row gap-4 pt-8 border-t border-slate-100">
+                                <button type="button" onClick={handleTestApiConnection} disabled={isTestingApi} className="sm:w-1/3 py-5 rounded-2xl font-black border-2 border-slate-200 text-slate-600 hover:border-indigo-600 hover:text-indigo-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {isTestingApi ? <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div> : 'TEST KONEKSI'}
+                                </button>
+                                <button type="submit" className="sm:w-2/3 bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
                                     <Save size={20} /> SIMPAN PENGATURAN AI
                                 </button>
                             </div>
