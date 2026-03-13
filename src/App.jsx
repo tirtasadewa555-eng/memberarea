@@ -19,7 +19,8 @@ import {
   Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
   MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
-  Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, HelpCircle, CheckCircle2, ListPlus
+  Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, HelpCircle, CheckCircle2, ListPlus,
+  Rocket, Wand2, Image as ImageIcon, Heart, Bookmark // ICON BARU UNTUK AI COPILOT
 } from 'lucide-react';
 
 // ==========================================
@@ -157,6 +158,11 @@ export default function App() {
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [searchFileQuery, setSearchFileQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
+
+  // --- Fitur Baru: AI Marketing Copilot States ---
+  const [copilotForm, setCopilotForm] = useState({ product: 'ProSpace VIP', platform: 'whatsapp', tone: 'fomo' });
+  const [copilotResult, setCopilotResult] = useState('');
+  const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
 
   // --- Ruang Fokus VIP States ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
@@ -815,6 +821,35 @@ export default function App() {
     link.click();
   };
 
+  // --- LOGIC: AI MARKETING COPILOT GENERATOR ---
+  const handleGenerateCopy = (e) => {
+      e.preventDefault();
+      setIsGeneratingCopy(true);
+      setCopilotResult('');
+      
+      // Simulasi delay berfikir AI
+      setTimeout(() => {
+          const link = `https://domainanda.com/?ref=${user?.uid || '123'}`;
+          let text = '';
+          const p = copilotForm.product || 'ProSpace VIP';
+          
+          if (copilotForm.platform === 'whatsapp') {
+              if(copilotForm.tone === 'fomo') text = `PENGUMUMAN PENTING! 🚨\n\nPromo spesial ${p} bakal ditutup HARI INI. Jangan sampai nyesel kelewatan akses VIP plus ribuan file master yang bisa bantu kamu cuan dari rumah!\n\nSlot sisa 5 orang lagi, buruan amankan di sini:\n👉 ${link}`;
+              else if(copilotForm.tone === 'santai') text = `Halo bro/sis! 👋 Lagi cari cara nambah skill digital & dapet komisi tambahan?\n\nCobain deh ${p}. Fiturnya lengkap banget, ada Academy, Ruang Fokus, sampai File Master siap pakai.\n\nCek aja dulu mumpung lagi ada diskon:\n👉 ${link}`;
+              else text = `Halo Bapak/Ibu,\n\nTingkatkan produktivitas dan keahlian digital Anda bersama ${p}. Platform All-in-One untuk profesional dan pebisnis.\n\nInfo selengkapnya & pendaftaran:\n👉 ${link}\n\nTerima kasih.`;
+          } else {
+              if(copilotForm.tone === 'fomo') text = `🔥 KESEMPATAN TERAKHIR! 🔥\n\nAkses ke ${p} bakal naik harga besok. Dapatkan ratusan modul, master file, dan komunitas VIP dalam satu tempat. 🚀\n\nJangan cuma jadi penonton, klik link di bio sekarang sebelum kehabisan! 👇\n\n🔗 ${link}\n\n#Diskon #KelasDigital #BisnisOnline #Marketing`;
+              else if(copilotForm.tone === 'santai') text = `Siapa bilang belajar skill digital itu susah dan mahal? 😎\n\nKenalin nih ${p}, platform asik buat kamu yang pengen upskill sambil kumpulin poin reward dan komisi! 💸\n\nYuk join bareng ribuan member lainnya. Klik link di bio ya! ✨\n\n🔗 ${link}\n\n#BelajarAsik #ProSpace #DigitalSkill`;
+              else text = `Investasi terbaik adalah leher ke atas. 📈\n\n${p} hadir sebagai solusi edukasi digital terintegrasi. Dilengkapi dengan LMS, Ruang Fokus, dan Katalog Master File untuk menunjang karir Anda.\n\nDaftar sekarang melalui tautan di bio kami.\n\n🔗 ${link}\n\n#EdukasiDigital #Karir #Profesional`;
+          }
+          
+          setCopilotResult(text);
+          setIsGeneratingCopy(false);
+          showToast("Copywriting berhasil dibuat!", "success");
+      }, 1500);
+  };
+
+
   const closeSidebarMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
 
 
@@ -986,8 +1021,14 @@ export default function App() {
               <NavBtn active={activeTab==='files'} onClick={()=>{setActiveTab('files'); closeSidebarMobile();}} icon={<FolderLock size={20} />} label="Katalog Master File" count={files.filter(f=>currentTier>=f.reqLevel).length} />
               <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20} />} label="Upgrade Paket" />
               <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20} />} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
+              
+              <div className="my-4 border-b border-slate-100"></div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Marketing & Earning</p>
               <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20} />} label="Program Afiliasi" />
+              <NavBtn active={activeTab==='copilot'} onClick={()=>{setActiveTab('copilot'); closeSidebarMobile();}} icon={<Rocket size={20} />} label="AI Marketing Copilot" />
               <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20} />} label="Peringkat Marketer" />
+              
+              <div className="my-4 border-b border-slate-100"></div>
               <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20} />} label="Tiket Bantuan" />
             </>
           )}
@@ -1226,8 +1267,119 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: ADMIN ACADEMY (LMS CRUD) */}
+          {/* TAB BARU: AI MARKETING COPILOT (JENIUS & KEREN)        */}
           {/* ==================================================== */}
+          {activeTab === 'copilot' && !isAdmin && (
+             <div className="animate-fadeIn space-y-8">
+                 <div className="text-center sm:text-left mb-6">
+                     <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] flex items-center justify-center sm:justify-start gap-3">
+                         <Rocket className="text-indigo-600" size={36} /> AI Marketing Copilot
+                     </h2>
+                     <p className="text-slate-500 font-medium mt-2 max-w-2xl">Studio pembuatan copywriting cerdas dengan **Live Smartphone Preview**. Buat teks promosi otomatis untuk memaksimalkan konversi komisi afiliasi Anda!</p>
+                 </div>
+
+                 <div className="flex flex-col lg:flex-row gap-10">
+                     {/* Panel Kiri: Form Copilot */}
+                     <div className="w-full lg:w-1/2 bg-white rounded-[2.5rem] p-8 sm:p-10 shadow-xl border border-slate-200">
+                         <form onSubmit={handleGenerateCopy} className="space-y-6">
+                             <div className="space-y-2">
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nama Produk / Campaign</label>
+                                 <input type="text" placeholder="Contoh: ProSpace VIP" className="w-full px-5 py-4 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" value={copilotForm.product} onChange={e=>setCopilotForm({...copilotForm, product: e.target.value})} required />
+                             </div>
+                             <div className="grid grid-cols-2 gap-4">
+                                 <div className="space-y-2">
+                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Platform</label>
+                                     <select className="w-full px-4 py-4 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" value={copilotForm.platform} onChange={e=>setCopilotForm({...copilotForm, platform: e.target.value})}>
+                                         <option value="whatsapp">WhatsApp</option>
+                                         <option value="instagram">Instagram</option>
+                                     </select>
+                                 </div>
+                                 <div className="space-y-2">
+                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gaya Bahasa (Tone)</label>
+                                     <select className="w-full px-4 py-4 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" value={copilotForm.tone} onChange={e=>setCopilotForm({...copilotForm, tone: e.target.value})}>
+                                         <option value="fomo">Mendesak (FOMO)</option>
+                                         <option value="santai">Santai / Asik</option>
+                                         <option value="profesional">Profesional</option>
+                                     </select>
+                                 </div>
+                             </div>
+                             <button type="submit" disabled={isGeneratingCopy} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black py-5 rounded-2xl shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-3">
+                                 {isGeneratingCopy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Wand2 size={20} />}
+                                 {isGeneratingCopy ? 'AI SEDANG MENULIS...' : 'GENERATE COPYWRITING'}
+                             </button>
+                         </form>
+                         
+                         {copilotResult && (
+                             <div className="mt-8 pt-8 border-t border-slate-100">
+                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Hasil Teks Mentah (Raw)</p>
+                                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 relative group">
+                                     <p className="text-sm font-medium text-slate-700 whitespace-pre-wrap">{copilotResult}</p>
+                                     <button onClick={()=>copyToClipboard(copilotResult)} className="absolute top-4 right-4 p-2 bg-white text-indigo-600 shadow-md rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 text-[10px] font-black uppercase"><Copy size={14}/> Salin</button>
+                                 </div>
+                             </div>
+                         )}
+                     </div>
+
+                     {/* Panel Kanan: Live Smartphone Preview (Visual Super Keren) */}
+                     <div className="w-full lg:w-1/2 flex flex-col items-center justify-center bg-slate-100 rounded-[2.5rem] p-8 border border-slate-200 shadow-inner">
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 bg-white px-4 py-2 rounded-full shadow-sm">Live Preview Studio</p>
+                         
+                         {/* MOCKUP HP CSS */}
+                         <div className="w-full max-w-[300px] h-[600px] bg-slate-900 border-[12px] border-slate-900 rounded-[3rem] shadow-2xl relative flex flex-col overflow-hidden shrink-0 animate-float">
+                             <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-6 bg-black rounded-full z-50"></div>
+                             <div className="flex-1 bg-slate-50 overflow-y-auto relative w-full h-full flex flex-col custom-scrollbar">
+                                 
+                                 {copilotForm.platform === 'whatsapp' ? (
+                                     <div className="flex flex-col h-full bg-[#E5DDD5]">
+                                         <div className="bg-[#075E54] text-white p-4 pt-10 flex items-center gap-3 shrink-0 shadow-md relative z-10">
+                                             <div className="w-10 h-10 bg-slate-300 rounded-full flex items-center justify-center text-slate-500 overflow-hidden"><UserCircle size={32} /></div>
+                                             <div><p className="font-bold text-sm leading-tight">Calon Member</p><p className="text-[10px] opacity-80 leading-none mt-0.5">online</p></div>
+                                         </div>
+                                         <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                                             <div className="bg-white p-3 rounded-2xl rounded-tl-none text-sm text-slate-800 shadow-sm w-[80%] relative">
+                                                 Halo kak, mau tanya detail sistem affiliatenya dong!
+                                                 <span className="text-[9px] text-slate-400 absolute bottom-1 right-2">11:58</span>
+                                             </div>
+                                             <div className="bg-[#DCF8C6] p-3 pb-5 rounded-2xl rounded-tr-none text-sm text-slate-800 shadow-sm whitespace-pre-wrap w-[90%] ml-auto relative">
+                                                 {isGeneratingCopy ? <span className="animate-pulse flex gap-1 items-center h-4"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span></span> : (copilotResult || "Preview copywriting WhatsApp Anda akan muncul di sini saat Anda klik generate...")}
+                                                 {!isGeneratingCopy && <span className="text-[9px] text-green-600 absolute bottom-1 right-2 flex items-center gap-0.5">12:00 <CheckCircle2 size={10}/></span>}
+                                             </div>
+                                         </div>
+                                     </div>
+                                 ) : (
+                                     <div className="flex flex-col h-full bg-white">
+                                         <div className="border-b border-slate-100 p-3 pt-10 flex items-center justify-between shrink-0 bg-white sticky top-0 z-10">
+                                             <div className="flex items-center gap-3">
+                                                 <div className="w-8 h-8 bg-gradient-to-tr from-yellow-400 via-rose-500 to-fuchsia-600 p-0.5 rounded-full"><div className="w-full h-full bg-white rounded-full border-2 border-white overflow-hidden flex items-center justify-center"><UserCircle size={24} className="text-slate-300"/></div></div>
+                                                 <p className="font-bold text-xs">{userData?.name?.split(' ')[0].toLowerCase() || 'user'}_pro</p>
+                                             </div>
+                                         </div>
+                                         <div className="flex-1 overflow-y-auto pb-4 custom-scrollbar">
+                                             <div className="w-full aspect-square bg-slate-100 flex items-center justify-center text-slate-300 border-b border-slate-50">
+                                                 <ImageIcon size={48} opacity={0.3} />
+                                             </div>
+                                             <div className="p-3 flex justify-between text-slate-700">
+                                                 <div className="flex gap-4"><Heart size={20} /><MessageCircle size={20} /><SendIcon size={20} /></div>
+                                                 <Bookmark size={20} className="text-slate-400"/>
+                                             </div>
+                                             <div className="px-4">
+                                                 <p className="text-[10px] font-black mb-2">9,124 likes</p>
+                                                 <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                                                     <span className="font-black mr-2">{userData?.name?.split(' ')[0].toLowerCase() || 'user'}_pro</span>
+                                                     {isGeneratingCopy ? <span className="animate-pulse">Mengetik caption...</span> : (copilotResult || "Preview caption Instagram Anda akan muncul di sini...")}
+                                                 </p>
+                                             </div>
+                                         </div>
+                                     </div>
+                                 )}
+                             </div>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+          )}
+
+          {/* TAB: ADMIN ACADEMY (LMS CRUD) */}
           {activeTab === 'admin_academy' && isAdmin && (
              <div className="animate-fadeIn space-y-10">
                  <div>
