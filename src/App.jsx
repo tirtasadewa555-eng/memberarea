@@ -21,7 +21,7 @@ import {
   CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
   Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
   HelpCircle, CheckCircle2, ListPlus, Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, 
-  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate
+  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate, Link, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 /* =======================================================================
@@ -74,7 +74,7 @@ const TIER_LEVELS = {
   0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0, desc: 'Akses terbatas untuk member baru', features: ['Akses Modul Dasar', 'Kuis Harian AI'] },
   1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000, desc: 'Cocok untuk individu yang baru memulai', features: ['Semua Akses Free', 'Akses Semua Modul', 'Grup Komunitas Terbatas', 'Sertifikat Digital'] },
   2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 249000, desc: 'Untuk profesional dan bisnis berkembang', features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'AI Copilot Terbatas', 'Support Prioritas', 'Ruang Fokus VIP'] },
-  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000, desc: 'Akses penuh tanpa batas untuk tim & agensi', features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Unlimited AI Copilot', 'Web Replikator Pribadi', 'Dedicated Support 24/7'] }
+  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000, desc: 'Akses penuh tanpa batas untuk tim & agensi', features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Unlimited AI Copilot', 'Web Replikator Pribadi & Custom Domain', 'Dedicated Support 24/7'] }
 };
 
 // Global CSS
@@ -103,7 +103,7 @@ const sanitizeHTML = (str) => {
 };
 
 // Fungsi Keamanan: Escape Input Strings
-const escapeInput = (str) => str ? str.replace(/[<>"'/]/g, "").trim() : '';
+const escapeInput = (str) => str ? str.replace(/[<>"']/g, "").trim() : ''; // Izinkan slash / untuk URL
 
 // Validasi Parsing JSON Aman
 const safeJSONParse = (str) => {
@@ -155,6 +155,8 @@ export default function App() {
   // Fitur Replicated Site Member State
   const [myLandingPage, setMyLandingPage] = useState(null);
   const [isGeneratingLP, setIsGeneratingLP] = useState(false);
+  const [editLPForm, setEditLPForm] = useState(null);
+  const [isEditingLP, setIsEditingLP] = useState(false);
 
   // --- UI States ---
   const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -199,11 +201,11 @@ export default function App() {
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
   const [isQuizProcessing, setIsQuizProcessing] = useState(false);
 
-  // --- Ruang Fokus VIP States (Keamanan Timer) ---
+  // --- Ruang Fokus VIP States ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
   const [isFocusing, setIsFocusing] = useState(false);
   const [focusMode, setFocusMode] = useState('work'); 
-  const focusStartTimeRef = useRef(null); // Anti-cheat timer
+  const focusStartTimeRef = useRef(null);
 
   // --- E-Learning Academy States ---
   const [activeCourseId, setActiveCourseId] = useState('');
@@ -219,7 +221,7 @@ export default function App() {
 
   const chatEndRef = useRef(null);
   const aiEndRef = useRef(null);
-  const isProcessingAction = useRef(false); // Flag Global untuk mencegah click-spam
+  const isProcessingAction = useRef(false);
 
   // --- Derived States ---
   const currentTier = userData?.subscriptionLevel || 0;
@@ -287,10 +289,6 @@ export default function App() {
     if (appliedCoupon && appliedCoupon.discount) return checkoutPkg.price - (checkoutPkg.price * appliedCoupon.discount / 100);
     return checkoutPkg.price;
   }, [checkoutPkg, appliedCoupon]);
-
-  const activeCourse = academyModules.find(m => m.id === activeCourseId) || academyModules[0] || null;
-  const activeLesson = activeCourse?.lessons?.find(l => l.id === activeLessonId) || activeCourse?.lessons?.[0] || null;
-  const isLessonCompleted = activeLesson ? completedLessons.includes(activeLesson.id) : false;
 
   // ==========================================
   // UTILITY & HELPERS
@@ -405,7 +403,7 @@ export default function App() {
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
-      // Tutup otomatis public site jika user sudah login
+      // Tutup otomatis public site jika user sudah login (biar fokus ke dashboard)
       if (u) setShowPublicSite(false);
       setLoading(false);
     });
@@ -427,7 +425,10 @@ export default function App() {
 
     // Ambil data Replicated Site milik Member yang sedang login
     const unsubMySite = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', user.uid), (d) => {
-        if (d.exists()) setMyLandingPage(d.data());
+        if (d.exists()) {
+            setMyLandingPage(d.data());
+            if(!isEditingLP) setEditLPForm(d.data()); // Sinkronisasi form edit jika sedang tidak mengedit
+        }
     });
 
     const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -475,8 +476,7 @@ export default function App() {
     return () => { unsubProfile(); unsubFiles(); unsubAnnounce(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); unsubMySite(); adminUnsub(); };
   }, [user, isAdmin]);
 
-
-  // --- Pomodoro Timer Engine (Dengan Validasi Anti-Cheat Waktu) ---
+  // --- Pomodoro Timer Engine ---
   useEffect(() => {
     let interval;
     if (isFocusing && focusTimeLeft > 0) {
@@ -492,7 +492,6 @@ export default function App() {
 
   const handleFocusComplete = async () => {
     if (focusMode === 'work') {
-       // Keamanan: Validasi bahwa waktu yg dihabiskan logis (Min. 24 menit secara real-time untuk sesi 25 menit)
        const timeElapsedMs = Date.now() - (focusStartTimeRef.current || Date.now());
        if (timeElapsedMs < 24 * 60 * 1000) {
            showToast("Aktivitas tidak wajar terdeteksi. Poin sesi dibatalkan.", "error");
@@ -550,7 +549,6 @@ export default function App() {
         await setDoc(doc(db, 'artifacts', appId, 'users', cred.user.uid, 'profile', 'data'), init);
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         localStorage.removeItem('affiliate_ref_v14');
-        
         logActivity(`${escapeInput(formData.name)} baru saja bergabung! 👋`, 'join');
         showToast("Registrasi Berhasil!");
       } else {
@@ -579,7 +577,6 @@ export default function App() {
     isProcessingAction.current = false;
   };
 
-  // --- LOGIC: AI KUIS PINTAR EDUKASI ---
   const handleGenerateAIQuiz = async () => {
       if (isGeneratingQuiz) return;
       setIsGeneratingQuiz(true); setAiQuiz(null); setSelectedQuizAnswer(null);
@@ -605,7 +602,6 @@ export default function App() {
       const isCorrect = selectedIndex === aiQuiz.answer;
       const pointEarned = isCorrect ? 20 : 5;
 
-      // Timeout untuk UX (memberi efek berpikir)
       setTimeout(async () => {
           if (!hasAnsweredToday) {
               try {
@@ -624,7 +620,7 @@ export default function App() {
       }, 1000);
   };
 
-  // --- LOGIC BARU: GENERATE AI LANDING PAGE ---
+  // --- LOGIC BARU: GENERATE & EDIT AI LANDING PAGE ---
   const handleGenerateLandingPage = async () => {
       if (currentTier < 2 && !isAdmin) return showToast("Minimal paket Business untuk membuat Web Replikator AI.", "error");
       if (isGeneratingLP) return;
@@ -632,28 +628,77 @@ export default function App() {
 
       try {
           const ownerName = escapeInput(userData?.name) || 'Member';
-          const prompt = `Anda adalah expert copywriter untuk produk digital "ProSpace Membership". Buatkan konten untuk landing page afiliasi atas nama "${ownerName}". Target audiens: orang yang ingin belajar AI dan digital marketing untuk cari uang. Berikan HANYA format JSON valid tanpa markdown tambahan: {"headline": "Judul bombastis, max 10 kata", "subheadline": "Subjudul persuasif", "story": "Cerita pendek 3 paragraf dengan tag HTML <p> dan <b> tentang kenapa harus gabung ProSpace bersama ${ownerName}"}`;
+          const prompt = `Anda adalah expert copywriter pembuat Landing Page berkonversi tinggi. Buatkan isi website promosi untuk produk digital "ProSpace Membership" yang dimiliki oleh afiliate bernama "${ownerName}". Target audiens: orang awam, karyawan, pebisnis & marketer yang ingin mencari uang tambahan lewat internet. 
+          Berikan HANYA format JSON valid tanpa markdown tambahan: 
+          {
+            "heroHeadline": "Judul bombastis, memikat, max 10 kata", 
+            "heroSub": "Subjudul yang menjelaskan solusi, max 20 kata", 
+            "vslUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            "features": [
+              {"t": "Nama Fitur 1", "d": "Deskripsi singkat"},
+              {"t": "Nama Fitur 2", "d": "Deskripsi singkat"},
+              {"t": "Nama Fitur 3", "d": "Deskripsi singkat"}
+            ],
+            "testimonials": [
+              {"n": "Budi Santoso", "t": "Komentar positif dan antusias!"},
+              {"n": "Siti Aminah", "t": "Komentar tentang kemudahan penggunaan."}
+            ],
+            "faq": [
+              {"q": "Pertanyaan 1", "a": "Jawaban jelas 1"},
+              {"q": "Pertanyaan 2", "a": "Jawaban jelas 2"}
+            ]
+          }`;
           
           const rawResult = await fetchFromAI(prompt, true);
           const lpData = safeJSONParse(rawResult);
-          if(!lpData || !lpData.headline || !lpData.story) throw new Error("Format AI terpotong.");
+          if(!lpData || !lpData.heroHeadline) throw new Error("Format AI terpotong atau gagal.");
 
-          // Simpan ke Firestore Public Collection
           const siteData = {
               ownerName: ownerName,
               ownerId: user.uid,
-              headline: sanitizeHTML(lpData.headline),
-              subheadline: sanitizeHTML(lpData.subheadline),
-              story: sanitizeHTML(lpData.story),
+              customDomain: myLandingPage?.customDomain || '', // Pertahankan custom domain jika sudah ada
+              heroHeadline: sanitizeHTML(lpData.heroHeadline),
+              heroSub: sanitizeHTML(lpData.heroSub),
+              vslUrl: escapeInput(lpData.vslUrl) || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+              features: lpData.features || [],
+              testimonials: lpData.testimonials || [],
+              faq: lpData.faq || [],
               updatedAt: new Date().toISOString()
           };
 
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', user.uid), siteData);
-          showToast("Halaman Landing Page AI Anda berhasil mengudara! 🚀", "success");
+          setEditLPForm(siteData);
+          showToast("Landing Page AI berhasil dirakit & mengudara! 🚀", "success");
       } catch (err) {
           showToast("Gagal men-generate website. Silakan coba lagi.", "error");
       }
       setIsGeneratingLP(false);
+  };
+
+  const handleUpdateLandingPage = async (e) => {
+      e.preventDefault();
+      if (isProcessingAction.current || !editLPForm) return;
+      isProcessingAction.current = true;
+      try {
+          // Bersihkan URL domain
+          let cleanDomain = escapeInput(editLPForm.customDomain).toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+          
+          const updatedData = {
+              ...editLPForm,
+              customDomain: cleanDomain,
+              heroHeadline: sanitizeHTML(editLPForm.heroHeadline),
+              heroSub: sanitizeHTML(editLPForm.heroSub),
+              vslUrl: escapeInput(editLPForm.vslUrl),
+              updatedAt: new Date().toISOString()
+          };
+
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', user.uid), updatedData);
+          showToast("Pengaturan Landing Page berhasil disimpan!", "success");
+          setIsEditingLP(false);
+      } catch(err) {
+          showToast("Gagal menyimpan perubahan.", "error");
+      }
+      isProcessingAction.current = false;
   };
 
 
@@ -778,8 +823,6 @@ export default function App() {
 
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
-      
-      // Keamanan: Kalkulasi Ulang Harga (Mencegah manipulasi finalPrice di Frontend lewat DevTools)
       const basePrice = TIER_LEVELS[checkoutPkg.level]?.price || 0;
       const discountVal = appliedCoupon && appliedCoupon.active ? appliedCoupon.discount : 0;
       const trueFinalPrice = basePrice - (basePrice * discountVal / 100);
@@ -829,7 +872,6 @@ export default function App() {
     isProcessingAction.current = true;
     try {
       const amountToWithdraw = affiliateBalance;
-      // Keamanan ekstra: cegah withdraw nominal negatif/nol
       if (amountToWithdraw <= 0) { isProcessingAction.current = false; return; }
       
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
@@ -1005,49 +1047,176 @@ export default function App() {
   // RENDER: LAYOUT
   // ==========================================
   
-  // TAMPILAN: PUBLIC REPLICATED SITE
+  // TAMPILAN: PUBLIC REPLICATED SITE (LANDING PAGE SUNGGUHAN)
   if (showPublicSite && publicSiteData && !user) {
+      
+      // Komponen Reusable untuk FAQ (Accordion)
+      const FaqItem = ({ q, a }) => {
+          const [isOpen, setIsOpen] = useState(false);
+          return (
+              <div className="bg-white border border-slate-200 rounded-2xl mb-4 overflow-hidden shadow-sm transition-all duration-300 hover:shadow-md">
+                  <button onClick={() => setIsOpen(!isOpen)} className="w-full text-left p-6 font-black text-slate-800 flex justify-between items-center bg-slate-50 hover:bg-indigo-50 focus:outline-none">
+                      <span>{q}</span>
+                      {isOpen ? <ChevronUp size={20} className="text-indigo-600" /> : <ChevronDown size={20} className="text-slate-400" />}
+                  </button>
+                  {isOpen && <div className="p-6 pt-0 text-slate-600 leading-relaxed font-medium bg-slate-50" dangerouslySetInnerHTML={{ __html: a }}></div>}
+              </div>
+          );
+      };
+
+      const affiliateLink = `https://member.bagihosting.com/p/login.html?ref=${publicSiteData.ownerId}`;
+
       return (
-          <div className="min-h-screen bg-slate-900 font-['Plus_Jakarta_Sans'] text-slate-100 flex flex-col relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-900 opacity-50 z-0"></div>
-              <div className="absolute -top-40 -right-40 w-96 h-96 bg-indigo-600 rounded-full blur-[150px] opacity-30 z-0 animate-pulse"></div>
+          <div className="min-h-screen bg-slate-50 font-['Plus_Jakarta_Sans'] text-slate-800 flex flex-col relative overflow-x-hidden">
               
-              <header className="p-6 relative z-10 flex justify-between items-center max-w-5xl mx-auto w-full">
-                  <div className="font-black text-2xl tracking-tighter text-white flex items-center gap-2">
-                     <ShieldCheck className="text-indigo-400" /> ProSpace
-                  </div>
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-white bg-opacity-10 px-4 py-2 rounded-full border border-white border-opacity-10 backdrop-blur-sm shadow-sm">
-                      Refference: {publicSiteData.ownerName.split(' ')[0]}
+              {/* Promo Bar */}
+              <div className="bg-gradient-to-r from-rose-500 to-orange-400 text-white text-center py-3 px-4 font-bold text-sm tracking-wide shadow-md relative z-50">
+                  🔥 PROMO SPESIAL: Diskon 50% Untuk 10 Pembeli Pertama Hari Ini! <a href={affiliateLink} className="underline ml-2 font-black">KLAIM SEKARANG</a>
+              </div>
+
+              {/* Navbar */}
+              <header className="sticky top-0 z-40 bg-white bg-opacity-90 backdrop-blur-xl border-b border-slate-200 py-4 px-6 shadow-sm">
+                  <div className="max-w-6xl mx-auto flex justify-between items-center">
+                      <div className="font-black text-2xl tracking-tighter text-slate-900 flex items-center gap-2">
+                         <ShieldCheck className="text-indigo-600" size={28}/> Pro<span className="text-indigo-600">Space</span>
+                      </div>
+                      <a href={affiliateLink} className="bg-slate-900 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-indigo-600 transition-colors shadow-lg hidden sm:block">Member Area</a>
                   </div>
               </header>
 
-              <main className="flex-1 flex flex-col items-center justify-center p-6 text-center relative z-10 max-w-4xl mx-auto w-full animate-slideUp">
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white font-['Outfit'] leading-tight mb-6 tracking-tight drop-shadow-lg">
-                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.headline) }}></span>
-                  </h1>
-                  <h2 className="text-lg sm:text-2xl text-indigo-300 font-medium mb-12 max-w-2xl">
-                      <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.subheadline) }}></span>
-                  </h2>
+              {/* Hero Section */}
+              <section className="relative pt-20 pb-32 px-6 overflow-hidden bg-slate-900 text-white">
+                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-slate-900 to-slate-900 opacity-90 z-0"></div>
+                  <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-indigo-600 rounded-full blur-[150px] opacity-30 z-0 animate-pulse"></div>
                   
-                  <div className="bg-slate-900 bg-opacity-40 backdrop-blur-xl border border-white border-opacity-10 rounded-[2.5rem] p-8 sm:p-12 mb-12 text-left w-full shadow-2xl text-base sm:text-lg text-slate-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: sanitizeHTML(publicSiteData.story) }}>
+                  <div className="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-16 relative z-10">
+                      <div className="w-full lg:w-1/2 text-center lg:text-left animate-slideInRight">
+                          <span className="bg-white bg-opacity-10 border border-white border-opacity-20 text-indigo-300 font-bold px-4 py-1.5 rounded-full text-xs uppercase tracking-widest mb-6 inline-block backdrop-blur-sm">Rekomendasi Spesial: {publicSiteData.ownerName}</span>
+                          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black font-['Outfit'] leading-tight mb-6 tracking-tight drop-shadow-lg" dangerouslySetInnerHTML={{ __html: publicSiteData.heroHeadline }}></h1>
+                          <p className="text-lg sm:text-xl text-slate-300 font-medium mb-10 leading-relaxed" dangerouslySetInnerHTML={{ __html: publicSiteData.heroSub }}></p>
+                          <a href={affiliateLink} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-full shadow-[0_10px_40px_rgba(79,70,229,0.5)] hover:scale-105 transition-transform text-lg flex items-center justify-center lg:justify-start gap-3 w-max mx-auto lg:mx-0">
+                              <Rocket size={24} /> GABUNG SEKARANG JUGA
+                          </a>
+                      </div>
+                      <div className="w-full lg:w-1/2 relative animate-float">
+                          <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 p-2 rounded-[2rem] shadow-2xl transform rotate-2 hover:rotate-0 transition-transform duration-500">
+                             <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" alt="Platform Dashboard" className="rounded-[1.5rem] border-4 border-slate-900 w-full object-cover shadow-inner" />
+                          </div>
+                      </div>
                   </div>
+              </section>
 
-                  <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto">
-                      <button onClick={() => setShowPublicSite(false)} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-full shadow-[0_0_40px_rgba(79,70,229,0.5)] hover:scale-105 transition-transform text-lg flex items-center justify-center gap-3">
-                          <Rocket size={24} /> GABUNG SEKARANG
-                      </button>
+              {/* Trust Marquee */}
+              <div className="bg-white border-b border-slate-200 py-6 overflow-hidden flex items-center relative">
+                  <div className="absolute left-0 w-20 h-full bg-gradient-to-r from-white to-transparent z-10"></div>
+                  <div className="absolute right-0 w-20 h-full bg-gradient-to-l from-white to-transparent z-10"></div>
+                  <div className="flex gap-16 animate-[marquee_20s_linear_infinite] whitespace-nowrap opacity-40 font-black text-2xl font-['Outfit'] uppercase tracking-widest text-slate-400">
+                      <span>Dipercaya Ribuan Member</span> • <span>Akses Lifetime</span> • <span>Support 24/7</span> • <span>Terbukti Menghasilkan</span> • <span>Dipercaya Ribuan Member</span> • <span>Akses Lifetime</span> • <span>Support 24/7</span> • <span>Terbukti Menghasilkan</span>
                   </div>
-              </main>
+              </div>
 
-              <footer className="p-6 text-center text-slate-500 text-sm relative z-10">
-                  Powered by ProSpace AI Replicator
+              {/* VSL Section */}
+              {publicSiteData.vslUrl && (
+                  <section className="py-24 px-6 bg-slate-50 text-center">
+                      <div className="max-w-4xl mx-auto">
+                          <h2 className="text-3xl sm:text-5xl font-black text-slate-900 mb-6 font-['Outfit'] tracking-tight">Tonton Demo Singkat Ini</h2>
+                          <p className="text-slate-500 text-lg mb-12 max-w-2xl mx-auto">Lihat langsung kehebatan fitur AI kami bekerja di dalam dashboard member secara live.</p>
+                          <div className="bg-white p-4 rounded-[2rem] shadow-2xl border border-slate-200">
+                              <div className="aspect-video w-full rounded-2xl overflow-hidden bg-slate-900 relative">
+                                  <iframe src={publicSiteData.vslUrl} className="w-full h-full absolute top-0 left-0" frameBorder="0" allowFullScreen></iframe>
+                              </div>
+                          </div>
+                      </div>
+                  </section>
+              )}
+
+              {/* Story / Problem-Agitation-Solution */}
+              <section className="py-24 px-6 bg-white relative">
+                  <div className="max-w-3xl mx-auto text-center mb-16">
+                      <h2 className="text-3xl sm:text-4xl font-black text-slate-900 mb-6 font-['Outfit']">Kenapa Harus ProSpace?</h2>
+                      <div className="w-20 h-2 bg-indigo-600 rounded-full mx-auto mb-10"></div>
+                      <div className="text-lg text-slate-600 leading-loose font-medium space-y-6 text-left bg-slate-50 p-10 rounded-[2.5rem] border border-slate-100 shadow-sm" dangerouslySetInnerHTML={{ __html: publicSiteData.story }}></div>
+                  </div>
+              </section>
+
+              {/* Features Grid */}
+              <section className="py-24 px-6 bg-slate-900 text-white relative overflow-hidden">
+                  <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-indigo-900 to-transparent opacity-30"></div>
+                  <div className="max-w-6xl mx-auto relative z-10">
+                      <div className="text-center mb-16">
+                          <h2 className="text-3xl sm:text-5xl font-black text-white mb-6 font-['Outfit'] tracking-tight">Fitur Superior Dalam 1 Genggaman</h2>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                          {publicSiteData.features && publicSiteData.features.map((f, i) => (
+                              <div key={i} className="bg-white bg-opacity-5 backdrop-blur-lg border border-white border-opacity-10 p-8 rounded-3xl hover:-translate-y-2 transition-transform duration-300">
+                                  <div className="w-14 h-14 bg-indigo-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
+                                      <MagicWand size={28} className="text-white" />
+                                  </div>
+                                  <h3 className="text-xl font-black mb-3">{f.t}</h3>
+                                  <p className="text-indigo-200 leading-relaxed text-sm">{f.d}</p>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </section>
+
+              {/* Testimonials */}
+              <section className="py-24 px-6 bg-slate-50">
+                  <div className="max-w-6xl mx-auto">
+                      <h2 className="text-3xl sm:text-4xl font-black text-center text-slate-900 mb-16 font-['Outfit']">Apa Kata Mereka?</h2>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          {publicSiteData.testimonials && publicSiteData.testimonials.map((testi, i) => (
+                              <div key={i} className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-lg relative">
+                                  <div className="absolute top-10 right-10 text-indigo-100 opacity-50 font-serif text-8xl leading-none">"</div>
+                                  <p className="text-lg text-slate-700 italic font-medium relative z-10 mb-8">"{testi.t}"</p>
+                                  <div className="flex items-center gap-4 relative z-10 border-t border-slate-100 pt-6">
+                                      <div className="w-12 h-12 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white font-black text-xl">{testi.n.charAt(0)}</div>
+                                      <div>
+                                          <h4 className="font-black text-slate-900">{testi.n}</h4>
+                                          <p className="text-xs text-slate-400 uppercase tracking-widest font-bold">Verified Member</p>
+                                      </div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </section>
+
+              {/* FAQ */}
+              <section className="py-24 px-6 bg-white border-t border-slate-200">
+                  <div className="max-w-3xl mx-auto">
+                      <h2 className="text-3xl sm:text-4xl font-black text-center text-slate-900 mb-12 font-['Outfit']">Pertanyaan Populer (FAQ)</h2>
+                      <div className="space-y-2">
+                          {publicSiteData.faq && publicSiteData.faq.map((item, i) => (
+                              <FaqItem key={i} q={item.q} a={item.a} />
+                          ))}
+                      </div>
+                  </div>
+              </section>
+
+              {/* Super CTA / Pricing Override */}
+              <section className="py-24 px-6 bg-slate-900 text-center relative overflow-hidden">
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20"></div>
+                  <div className="max-w-4xl mx-auto relative z-10 bg-gradient-to-b from-indigo-600 to-purple-800 rounded-[3rem] p-12 sm:p-20 shadow-[0_20px_60px_rgba(79,70,229,0.4)] border border-indigo-400 border-opacity-30">
+                      <h2 className="text-4xl sm:text-6xl font-black text-white font-['Outfit'] mb-6 tracking-tight">Ambil Keputusan Sekarang!</h2>
+                      <p className="text-xl text-indigo-100 font-medium mb-12 max-w-2xl mx-auto">Jangan tunggu harga naik. Bergabunglah hari ini dan dapatkan akses penuh ke ekosistem ProSpace melalui rekomendasi {publicSiteData.ownerName}.</p>
+                      <a href={affiliateLink} className="inline-flex items-center justify-center gap-3 bg-white text-indigo-600 font-black px-12 py-6 rounded-full shadow-2xl hover:scale-105 hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all text-xl uppercase tracking-wider">
+                          Daftar & Kunci Diskon <ChevronRight size={24} />
+                      </a>
+                  </div>
+              </section>
+
+              <footer className="p-8 text-center text-slate-500 font-medium border-t border-slate-200 bg-white">
+                  &copy; {new Date().getFullYear()} ProSpace Ecosystem. All rights reserved.<br/>
+                  <span className="text-xs mt-2 inline-block">Affiliate Partner: {publicSiteData.ownerName}</span>
               </footer>
+              
               <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
           </div>
       );
   }
 
-  // TAMPILAN: LOGIN (DEFAULT)
+  // TAMPILAN: LOGIN (DEFAULT JIKA BELUM ADA SESI DAN BUKAN REPLICATED SITE)
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   if (!user) return (
@@ -1069,7 +1238,7 @@ export default function App() {
             {authMode==='register' && <input type="text" placeholder="Nama Lengkap" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-sm" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} required />}
             <input type="email" placeholder="Alamat Email" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-sm" value={formData.email} onChange={e=>setFormData({...formData, email: e.target.value})} required />
             <input type="password" placeholder="Password" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-600 outline-none transition-all font-bold text-sm" value={formData.password} onChange={e=>setFormData({...formData, password: e.target.value})} required />
-            <button type="submit" disabled={authLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+            <button type="submit" disabled={authLoading || isProcessingAction.current} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                {authLoading && <RefreshCw size={18} className="animate-spin" />}
                {authLoading ? 'MEMPROSES...' : authMode==='login' ? 'MASUK KE DASHBOARD' : 'DAFTAR SEKARANG'}
             </button>
@@ -1113,7 +1282,7 @@ export default function App() {
             {file.category === 'Ebook' ? <FileText size={24} /> : file.category === 'Video' ? <Video size={24} /> : <Box size={24} />}
           </div>
           {isAccessible ? (
-            <button onClick={onToggleProgress} className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1 border transition-colors ${isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
+            <button onClick={onToggleProgress} disabled={isProcessingAction.current} className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter flex items-center gap-1 border transition-colors disabled:opacity-50 ${isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
               {isCompleted ? <CheckSquare size={12} /> : <Square size={12} />} {isCompleted ? 'SELESAI' : 'TANDAI'}
             </button>
           ) : (
@@ -1165,14 +1334,14 @@ export default function App() {
                 </div>
                 <div className="flex-1 p-4 overflow-y-auto bg-slate-50 flex flex-col gap-3 custom-scrollbar">
                    {aiMessages.map((m, i) => (
-                      <div key={i} className={`max-w-[85%] p-3 rounded-2xl text-sm ${m.role === 'ai' ? 'bg-white border self-start rounded-tl-none' : 'bg-indigo-600 text-white self-end rounded-tr-none shadow-md'}`} dangerouslySetInnerHTML={{__html: sanitizeHTML(m.text)}}></div>
+                      <div key={i} className={`max-w-[85%] p-3 rounded-2xl text-sm ${m.role === 'ai' ? 'bg-white border self-start rounded-tl-none' : 'bg-indigo-600 text-white self-end rounded-tr-none shadow-md'}`} dangerouslySetInnerHTML={{__html: m.text}}></div>
                    ))}
                    {aiTyping && <div className="p-3 bg-white border self-start rounded-2xl rounded-tl-none italic text-xs text-slate-400">Sedang mengetik...</div>}
                    <div ref={aiEndRef} />
                 </div>
                 <form onSubmit={handleAiSubmit} className="p-3 bg-white border-t flex gap-2">
                    <input type="text" placeholder="Tanya AI..." value={aiInput} onChange={e=>setAiInput(e.target.value)} className="flex-1 px-4 py-2 bg-slate-100 rounded-xl outline-none text-sm" />
-                   <button type="submit" className="bg-indigo-600 text-white p-2.5 rounded-xl"><Send size={18} /></button>
+                   <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white p-2.5 rounded-xl disabled:opacity-50"><Send size={18} /></button>
                 </form>
              </div>
            )}
@@ -1221,8 +1390,7 @@ export default function App() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Marketing & Earning</p>
               <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20} />} label="Program Afiliasi" />
               <NavBtn active={activeTab==='copilot'} onClick={()=>{setActiveTab('copilot'); closeSidebarMobile();}} icon={<Rocket size={20} />} label="AI Marketing Copilot" />
-              {/* FITUR BARU: MENU REPLICATED SITE */}
-              <NavBtn active={activeTab==='landingpage'} onClick={()=>{setActiveTab('landingpage'); closeSidebarMobile();}} icon={<Globe size={20} />} label="Web Replikator Pribadi" />
+              <NavBtn active={activeTab==='landingpage'} onClick={()=>{setActiveTab('landingpage'); closeSidebarMobile();}} icon={<LayoutTemplate size={20} />} label="Web Replikator Pribadi" />
               
               <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20} />} label="Peringkat Marketer" />
               
@@ -1275,7 +1443,7 @@ export default function App() {
                       <h3 className="text-xl sm:text-2xl font-black mb-1 flex items-center justify-center sm:justify-start gap-2"><Gift size={24} /> Bonus Check-In Harian</h3>
                       <p className="text-purple-100 text-xs sm:text-sm font-medium">Klaim setiap hari dan kumpulkan Poin Reward Anda.</p>
                    </div>
-                   <button onClick={handleDailyCheckIn} disabled={userData?.lastCheckInDate === new Date().toDateString()} className="relative z-10 w-full sm:w-auto bg-white text-purple-600 px-8 py-4 rounded-2xl font-black text-sm hover:scale-105 transition-transform disabled:opacity-50 shadow-lg">
+                   <button onClick={handleDailyCheckIn} disabled={userData?.lastCheckInDate === new Date().toDateString() || isProcessingAction.current} className="relative z-10 w-full sm:w-auto bg-white text-purple-600 px-8 py-4 rounded-2xl font-black text-sm hover:scale-105 transition-transform disabled:opacity-50 shadow-lg">
                       {userData?.lastCheckInDate === new Date().toDateString() ? 'SUDAH KLAIM' : '🎁 KLAIM +10 POIN'}
                    </button>
                 </div>
@@ -1422,7 +1590,7 @@ export default function App() {
                               {isLessonCompleted ? (
                                  <button disabled className="bg-emerald-100 text-emerald-700 px-6 py-3 rounded-xl font-black text-sm flex items-center gap-2 cursor-not-allowed"><CheckCircle2 size={18} /> MATERI SELESAI</button>
                               ) : (
-                                 <button onClick={() => handleCompleteLearning(activeLesson, activeLesson.type === 'quiz', quizSelection)} className="bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-black text-sm hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-1">{activeLesson.type === 'quiz' ? 'KIRIM JAWABAN' : 'TANDAI SELESAI'}</button>
+                                 <button disabled={isProcessingAction.current} onClick={() => handleCompleteLearning(activeLesson, activeLesson.type === 'quiz', quizSelection)} className="bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-black text-sm hover:bg-indigo-700 transition-all shadow-lg hover:-translate-y-1 disabled:opacity-50">{activeLesson.type === 'quiz' ? 'KIRIM JAWABAN' : 'TANDAI SELESAI'}</button>
                               )}
                            </div>
                         </div>
@@ -1442,63 +1610,122 @@ export default function App() {
              <div className="animate-fadeIn space-y-8 max-w-4xl mx-auto">
                  <div className="text-center space-y-4 mb-10">
                      <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2 shadow-lg shadow-blue-100"><LayoutTemplate size={32} /></div>
-                     <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Web Replikator <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Berbasis AI</span></h2>
-                     <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Buat landing page pribadi Anda dengan 1 klik. Promosikan link Anda dan biarkan AI yang meyakinkan calon pelanggan untuk mendaftar!</p>
+                     <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Web Replikator <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">AI Premium</span></h2>
+                     <p className="text-slate-500 text-sm sm:text-base max-w-lg mx-auto">Sistem akan merakit Landing Page mandiri berkonversi tinggi untuk Anda, siap mendatangkan pundi komisi tanpa perlu langganan hosting!</p>
                  </div>
 
-                 <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8 sm:p-12">
-                     <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-10 pb-8 border-b border-slate-100">
-                         <div>
-                             <h3 className="text-xl font-black text-slate-800">Status Landing Page Anda</h3>
-                             <div className="flex items-center gap-2 mt-2">
-                                 <span className={`w-3 h-3 rounded-full ${myLandingPage ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
-                                 <span className="font-bold text-sm text-slate-500">{myLandingPage ? 'Online & Aktif' : 'Belum Dibuat'}</span>
-                             </div>
-                         </div>
-                         {myLandingPage && (
-                             <button onClick={() => window.open(`https://member.bagihosting.com/?ref=${user?.uid}`, '_blank')} className="bg-slate-900 text-white font-black px-6 py-3 rounded-xl hover:bg-indigo-600 transition-all text-sm flex items-center gap-2">
-                                 <Globe size={18} /> KUNJUNGI WEB SAYA
-                             </button>
-                         )}
-                     </div>
-
+                 <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8 sm:p-12 overflow-hidden">
                      {currentTier < 2 ? (
                          <div className="text-center bg-amber-50 border border-amber-200 rounded-2xl p-10">
                              <Lock size={48} className="mx-auto text-amber-400 mb-4" />
-                             <h3 className="text-xl font-black text-amber-800 mb-2">Fitur Terkunci</h3>
-                             <p className="text-amber-700 font-medium mb-6">Upgrade minimal ke paket <b>Business</b> untuk menggunakan fitur AI Replicated Site ini dan lipat gandakan komisi Anda.</p>
+                             <h3 className="text-xl font-black text-amber-800 mb-2">Akses Eksklusif Terkunci</h3>
+                             <p className="text-amber-700 font-medium mb-6">Upgrade minimal ke paket <b>Business</b> untuk mengaktifkan AI Website Builder ini.</p>
                              <button onClick={() => setActiveTab('shop')} className="bg-amber-500 text-white font-black px-8 py-3 rounded-xl shadow-lg hover:bg-amber-600 transition-all">UPGRADE SEKARANG</button>
                          </div>
                      ) : (
                          <>
                              {!myLandingPage ? (
                                  <div className="text-center py-10">
-                                     <LayoutTemplate size={64} className="mx-auto text-slate-200 mb-6" />
-                                     <p className="text-slate-500 font-medium mb-8 max-w-md mx-auto">Anda belum memiliki landing page pribadi. Biarkan AI kami menuliskan copywriting terbaik berdasarkan profil Anda.</p>
+                                     <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6"><MagicWand size={40} className="text-indigo-600" /></div>
+                                     <h3 className="text-2xl font-black text-slate-800 mb-4">Website Anda Belum Dibuat</h3>
+                                     <p className="text-slate-500 font-medium mb-8 max-w-md mx-auto">Sistem AI kami siap menenun algoritma copywriting maut khusus atas nama Anda. Proses ini hanya memakan waktu 10 detik.</p>
                                      <button onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-2xl shadow-xl hover:scale-105 transition-transform flex items-center justify-center gap-3 mx-auto disabled:opacity-50">
                                          {isGeneratingLP ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Wand2 size={24} />}
-                                         {isGeneratingLP ? 'AI SEDANG MENULIS WEB...' : 'GENERATE LANDING PAGE SAYA'}
+                                         {isGeneratingLP ? 'AI MERAKIT WEBSITE ANDA...' : 'GENERATE LANDING PAGE SAYA'}
                                      </button>
                                  </div>
                              ) : (
-                                 <div>
-                                     <div className="bg-slate-50 rounded-2xl border border-slate-200 p-8 relative overflow-hidden">
-                                         <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-4">Preview Teks Website Anda</p>
-                                         <h1 className="text-3xl font-black text-slate-900 mb-4 font-['Outfit']" dangerouslySetInnerHTML={{__html: myLandingPage.headline}}></h1>
-                                         <h2 className="text-lg text-indigo-600 font-bold mb-6" dangerouslySetInnerHTML={{__html: myLandingPage.subheadline}}></h2>
-                                         <div className="text-slate-600 leading-relaxed font-medium" dangerouslySetInnerHTML={{__html: myLandingPage.story}}></div>
-                                         <div className="absolute top-0 right-0 p-4 opacity-10"><LayoutTemplate size={120} /></div>
-                                     </div>
-                                     <div className="mt-8 flex flex-col sm:flex-row gap-4">
-                                         <div className="flex-1 flex bg-slate-100 border border-slate-200 rounded-xl p-2 items-center">
-                                             <span className="text-xs font-black text-slate-400 px-3 uppercase tracking-widest shrink-0">Link Anda</span>
-                                             <input type="text" readOnly value={`https://member.bagihosting.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-700 px-2 truncate" />
-                                             <button onClick={() => copyToClipboard(`https://member.bagihosting.com/?ref=${user?.uid}`)} className="bg-white border shadow-sm text-indigo-600 p-2.5 rounded-lg hover:bg-indigo-50"><Copy size={16} /></button>
+                                 <div className="space-y-10">
+                                     {/* Dashboard Control Panel */}
+                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                                         <div>
+                                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Status Web</p>
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]"></span>
+                                                <span className="font-black text-slate-800 text-lg">ONLINE</span>
+                                            </div>
                                          </div>
-                                         <button onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-slate-900 text-white font-black px-6 py-4 rounded-xl hover:bg-indigo-600 transition-all text-sm shrink-0 flex items-center gap-2 disabled:opacity-50">
-                                             {isGeneratingLP ? <RefreshCw size={18} className="animate-spin" /> : <RefreshCw size={18} />} PERBARUI TEKS AI
-                                         </button>
+                                         <div className="flex gap-3 w-full sm:w-auto">
+                                            <button onClick={() => window.open(`https://member.bagihosting.com/?ref=${user?.uid}`, '_blank')} className="flex-1 sm:flex-none bg-slate-900 text-white font-black px-6 py-3.5 rounded-xl hover:bg-indigo-600 transition-all text-sm flex items-center justify-center gap-2 shadow-lg">
+                                                <Globe size={18} /> KUNJUNGI WEB
+                                            </button>
+                                            <button onClick={() => setIsEditingLP(!isEditingLP)} className={`flex-1 sm:flex-none font-black px-6 py-3.5 rounded-xl transition-all text-sm flex items-center justify-center gap-2 border-2 ${isEditingLP ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                                                <Edit3 size={18} /> {isEditingLP ? 'TUTUP EDITOR' : 'EDIT KONTEN'}
+                                            </button>
+                                         </div>
                                      </div>
+
+                                     {/* Share Link Area */}
+                                     <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 relative overflow-hidden">
+                                        <div className="absolute right-0 top-0 opacity-10 scale-150 transform translate-x-1/4 -translate-y-1/4"><LinkIcon size={150}/></div>
+                                        <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-3 relative z-10">Link Referal Utama Anda</p>
+                                        <div className="flex bg-white border border-indigo-200 rounded-xl p-2 items-center relative z-10 shadow-sm">
+                                            <input type="text" readOnly value={`https://member.bagihosting.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-700 px-3 truncate" />
+                                            <button onClick={() => copyToClipboard(`https://member.bagihosting.com/?ref=${user?.uid}`)} className="bg-indigo-600 text-white px-5 py-3 rounded-lg font-black text-xs hover:bg-indigo-700 transition-colors shadow-md">COPY LINK</button>
+                                        </div>
+                                     </div>
+
+                                     {/* Custom Domain Settings */}
+                                     <div className="border border-slate-200 rounded-2xl p-6 sm:p-8">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center"><Globe size={20}/></div>
+                                            <div>
+                                                <h3 className="font-black text-lg text-slate-800">Custom Domain White-Label</h3>
+                                                <p className="text-xs font-bold text-slate-400">Gunakan domain Anda sendiri (misal: www.bisnisku.com)</p>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <input type="text" placeholder="Masukkan nama domain Anda tanpa https..." value={editLPForm?.customDomain || ''} onChange={e => setEditLPForm({...editLPForm, customDomain: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" disabled={!isEditingLP} />
+                                            <div className="bg-slate-50 p-4 rounded-xl text-xs font-medium text-slate-500 leading-relaxed border border-slate-200">
+                                                <b>Instruksi DNS:</b> Arahkan CNAME record domain Anda ke <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">member.bagihosting.com</code>. Proses propagasi mungkin memakan waktu hingga 24 jam.
+                                            </div>
+                                            {isEditingLP && <button onClick={handleUpdateLandingPage} disabled={isProcessingAction.current} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-600 transition-colors">SIMPAN DOMAIN</button>}
+                                        </div>
+                                     </div>
+
+                                     {/* Visual Editor Form */}
+                                     {isEditingLP ? (
+                                         <form onSubmit={handleUpdateLandingPage} className="border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6 bg-white animate-slideUp relative">
+                                            <div className="absolute top-0 right-0 bg-amber-400 text-white text-[9px] font-black uppercase px-3 py-1 rounded-bl-xl rounded-tr-2xl">Editor Mode</div>
+                                            <h3 className="font-black text-lg text-slate-800 mb-6 border-b border-slate-100 pb-4">Edit Konten Halaman</h3>
+                                            
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Headline Utama</label>
+                                                <textarea rows="2" value={editLPForm?.heroHeadline || ''} onChange={e=>setEditLPForm({...editLPForm, heroHeadline: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-bold text-sm resize-none"></textarea>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sub Headline</label>
+                                                <textarea rows="2" value={editLPForm?.heroSub || ''} onChange={e=>setEditLPForm({...editLPForm, heroSub: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-medium text-sm resize-none"></textarea>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Link Video YouTube (VSL)</label>
+                                                <input type="url" placeholder="https://www.youtube.com/embed/..." value={editLPForm?.vslUrl || ''} onChange={e=>setEditLPForm({...editLPForm, vslUrl: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-medium text-sm" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sales Story / Copywriting (HTML Diizinkan)</label>
+                                                <textarea rows="6" value={editLPForm?.story || ''} onChange={e=>setEditLPForm({...editLPForm, story: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-medium text-sm custom-scrollbar"></textarea>
+                                            </div>
+                                            
+                                            <div className="pt-6 border-t border-slate-100 flex gap-4">
+                                                <button type="submit" disabled={isProcessingAction.current} className="flex-1 bg-indigo-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex justify-center items-center gap-2">
+                                                    <Save size={18} /> SIMPAN PERUBAHAN
+                                                </button>
+                                                <button type="button" onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-slate-100 text-slate-600 font-black px-6 py-4 rounded-xl hover:bg-slate-200 transition-all text-xs flex justify-center items-center gap-2">
+                                                    {isGeneratingLP ? <RefreshCw size={16} className="animate-spin" /> : <Wand2 size={16} />} RE-GENERATE AI
+                                                </button>
+                                            </div>
+                                         </form>
+                                     ) : (
+                                         <div className="bg-slate-900 text-white rounded-[2rem] p-8 sm:p-12 relative overflow-hidden group">
+                                            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 opacity-20 blur-[80px] rounded-full group-hover:opacity-40 transition-opacity"></div>
+                                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6 bg-white bg-opacity-10 px-3 py-1 inline-block rounded-full border border-white border-opacity-10">Preview Mini</p>
+                                            <h1 className="text-3xl sm:text-4xl font-black mb-4 font-['Outfit'] leading-tight" dangerouslySetInnerHTML={{__html: myLandingPage.heroHeadline}}></h1>
+                                            <h2 className="text-lg text-indigo-200 font-medium mb-8 leading-relaxed" dangerouslySetInnerHTML={{__html: myLandingPage.heroSub}}></h2>
+                                            <div className="bg-white bg-opacity-5 p-6 rounded-2xl border border-white border-opacity-10 backdrop-blur-sm">
+                                                <p className="text-sm text-slate-300 font-mono">... {myLandingPage.story.substring(0, 150).replace(/<[^>]+>/g, '')} ...</p>
+                                            </div>
+                                         </div>
+                                     )}
                                  </div>
                              )}
                          </>
@@ -2021,125 +2248,6 @@ export default function App() {
                   </div>
                </div>
             </div>
-          )}
-
-          {/* TAB: ADMIN KELOLA FILE MASTER */}
-          {activeTab === 'admin_files' && isAdmin && (
-             <div className="animate-fadeIn space-y-10">
-                <h2 className="text-3xl font-black text-slate-900">Kelola Produk & File Master</h2>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                   <div className="lg:col-span-1">
-                      <form onSubmit={handleProductSubmit} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
-                         <h3 className="font-black text-lg text-slate-800">{editingId ? 'Edit Produk' : 'Tambah Produk'}</h3>
-                         <input type="text" placeholder="Nama Produk" value={productForm.name} onChange={e=>setProductForm({...productForm, name:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
-                         <select value={productForm.category} onChange={e=>setProductForm({...productForm, category:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm">
-                            <option>Ebook</option><option>Video</option><option>Software</option>
-                         </select>
-                         <input type="text" placeholder="Ukuran (Cth: 15 MB)" value={productForm.size} onChange={e=>setProductForm({...productForm, size:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
-                         <select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm">
-                            {[1,2,3].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}
-                         </select>
-                         <input type="url" placeholder="URL Download Asli" value={productForm.url} onChange={e=>setProductForm({...productForm, url:e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
-                         <button type="submit" disabled={isProcessingAction.current} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50">{editingId ? 'SIMPAN EDIT' : 'TAMBAH KE KATALOG'}</button>
-                      </form>
-                   </div>
-                   <div className="lg:col-span-2 space-y-4">
-                      {files.map(f => (
-                         <div key={f.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 flex justify-between items-center shadow-sm">
-                            <div>
-                               <h4 className="font-black text-slate-900 text-lg">{f.name}</h4>
-                               <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{f.category} • Tier {f.reqLevel}</p>
-                            </div>
-                            <div className="flex gap-2">
-                               <button onClick={()=>{setEditingId(f.id); setProductForm({name:f.name, size:f.size, reqLevel:f.reqLevel, url:f.url, category:f.category}); window.scrollTo({top:0, behavior:'smooth'});}} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100"><Edit3 size={16} /></button>
-                               <button onClick={async ()=>{if(window.confirm('Hapus file ini?')) await deleteDoc(doc(db,'artifacts',appId,'public','data','files',f.id));}} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
-                            </div>
-                         </div>
-                      ))}
-                   </div>
-                </div>
-             </div>
-          )}
-
-          {/* TAB: ADMIN KELOLA KUPON */}
-          {activeTab === 'admin_coupons' && isAdmin && (
-             <div className="animate-fadeIn space-y-10">
-                <h2 className="text-3xl font-black text-slate-900">Kelola Kupon Diskon</h2>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                   <div className="lg:col-span-1">
-                      <form onSubmit={handleCreateCoupon} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5 lg:sticky lg:top-28">
-                         <h3 className="font-black text-lg text-slate-800">Buat Kupon Baru</h3>
-                         <input type="text" placeholder="Kode Promo (Maks 10 Huruf)" value={couponForm.code} onChange={e=>setCouponForm({...couponForm, code: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm uppercase" required />
-                         <input type="number" placeholder="Diskon (Dalam %)" value={couponForm.discount} onChange={e=>setCouponForm({...couponForm, discount: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" required />
-                         <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all">BUAT KUPON</button>
-                      </form>
-                   </div>
-                   <div className="lg:col-span-2">
-                      <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                         <table className="w-full text-left">
-                            <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
-                               <tr><th className="px-8 py-5">Kode Kupon</th><th className="px-8 py-5">Diskon</th><th className="px-8 py-5 text-center">Tindakan</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                               {coupons.map(c => (
-                                  <tr key={c.id}>
-                                     <td className="px-8 py-6 font-mono font-black text-indigo-600">{c.code}</td>
-                                     <td className="px-8 py-6 font-black">{c.discount}% OFF</td>
-                                     <td className="px-8 py-6 text-center">
-                                        <button onClick={()=>handleDeleteCoupon(c.id)} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
-                                     </td>
-                                  </tr>
-                               ))}
-                            </tbody>
-                         </table>
-                      </div>
-                   </div>
-                </div>
-             </div>
-          )}
-
-          {/* TAB: MEMBER HELPDESK & ADMIN SUPPORT */}
-          {(activeTab === 'support' || activeTab === 'admin_support') && (
-             <div className="animate-fadeIn space-y-10">
-                <h2 className="text-3xl font-black text-slate-900">{isAdmin ? 'Kelola Tiket Bantuan' : 'Pusat Bantuan'}</h2>
-                {!isAdmin && (
-                   <form onSubmit={handleCreateTicket} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl space-y-5">
-                      <h3 className="font-black text-lg text-slate-800">Buat Tiket Baru</h3>
-                      <input type="text" placeholder="Subjek / Kendala Singkat" value={ticketForm.subject} onChange={e=>setTicketForm({...ticketForm, subject: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm" required />
-                      <textarea placeholder="Jelaskan detail kendala Anda..." rows="4" value={ticketForm.message} onChange={e=>setTicketForm({...ticketForm, message: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm resize-none" required></textarea>
-                      <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-50"><Send size={18} /> KIRIM TIKET</button>
-                   </form>
-                )}
-                <div className="space-y-6 mt-8">
-                   {tickets.length === 0 ? (
-                      <p className="text-slate-400 font-bold text-center py-10">Tidak ada tiket bantuan.</p>
-                   ) : (
-                      tickets.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
-                         <div key={t.id} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden">
-                            {t.status === 'open' && <div className="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>}
-                            {isAdmin && <button onClick={()=>handleDeleteTicket(t.id)} className="absolute top-8 right-8 text-rose-400 hover:text-rose-600"><Trash2 size={18} /></button>}
-                            <div className="mb-4 pr-10">
-                               <h4 className="font-black text-xl text-slate-900">{t.subject}</h4>
-                               <p className="text-xs font-bold text-slate-400 mt-1">Dari: {t.userName} • {new Date(t.createdAt).toLocaleDateString()}</p>
-                            </div>
-                            <p className="text-sm text-slate-700 bg-slate-50 p-5 rounded-xl border border-slate-100" dangerouslySetInnerHTML={{__html: t.message}}></p>
-                            {t.status === 'open' && isAdmin && (
-                               <form onSubmit={(e) => { e.preventDefault(); handleAdminReplyTicket(t.id, e.target.reply.value); }} className="mt-6 flex gap-3">
-                                  <input name="reply" type="text" placeholder="Tulis solusi untuk member..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 outline-none font-bold text-sm" required />
-                                  <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-indigo-700 disabled:opacity-50">BALAS</button>
-                               </form>
-                            )}
-                            {t.adminReply && (
-                               <div className="mt-6 bg-emerald-50 border border-emerald-100 p-5 rounded-xl">
-                                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Balasan Admin:</p>
-                                  <p className="text-sm font-bold text-emerald-900" dangerouslySetInnerHTML={{__html: t.adminReply}}></p>
-                               </div>
-                            )}
-                         </div>
-                      ))
-                   )}
-                </div>
-             </div>
           )}
 
           {/* TAB: PROFILE */}
