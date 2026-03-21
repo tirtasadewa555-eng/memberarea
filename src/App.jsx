@@ -27,13 +27,12 @@ import {
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
-    apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
-  authDomain: "memberarea-websiteku.firebaseapp.com",
-  projectId: "memberarea-websiteku",
-  storageBucket: "memberarea-websiteku.firebasestorage.app",
-  messagingSenderId: "9418923099",
-  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-  measurementId: "G-RQBKYLD4K5"
+    apiKey: "dummy",
+    authDomain: "dummy.firebaseapp.com",
+    projectId: "dummy-project",
+    storageBucket: "dummy.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:abcdef"
   };
 };
 
@@ -291,9 +290,12 @@ export default function App() {
   };
 
   const fetchFromAI = async (promptText, jsonMode = false) => {
-      // In Canvas environment API Keys are injected automatically if provider is left blank.
-      const keyToUse = aiConfig.apiKey;
-      let url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${keyToUse}`;
+      // Gunakan kunci bawaan jika kosong, jika ada custom API Key, gunakan gemini-1.5-flash agar tidak 404
+      const isCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
+      const keyToUse = isCustomKey ? aiConfig.apiKey.trim() : "";
+      const modelName = isCustomKey ? "gemini-1.5-flash" : "gemini-2.5-flash-preview-09-2025";
+      
+      let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       
       try {
           const payload = { contents: [{ parts: [{ text: promptText }] }] };
@@ -510,8 +512,10 @@ export default function App() {
 
     setIsGeneratingPhoto(true); setPhotoResult(null); setPhotoGenStatus('Menganalisis gambar dengan AI Visi...');
 
+    const isCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
+    const keyToUse = isCustomKey ? aiConfig.apiKey.trim() : "";
+
     const callModel = async (modelName, payload) => {
-      const keyToUse = aiConfig.apiKey;
       let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       
       let res = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -524,6 +528,10 @@ export default function App() {
     };
 
     try {
+      if (isCustomKey) {
+         throw new Error("Ajaib Foto butuh API Key bawaan! Harap KOSONGKAN isian API Key Global di menu 'Pengaturan API & AI' agar fitur foto berfungsi.");
+      }
+
       const textModelName = "gemini-2.5-flash-preview-09-2025";
       let textPrompt = `Act as an Expert Prompt Engineer. Instruction: "${photoInstruction}". `;
       if (activePhotoFeature === 'gabung') textPrompt += `Write a prompt to seamlessly merge these uploaded images.`;
