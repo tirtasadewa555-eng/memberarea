@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, 
-  deleteDoc, addDoc, serverTimestamp, query, where, increment, orderBy, limit, arrayUnion
+  deleteDoc, addDoc, serverTimestamp, increment, arrayUnion
 } from 'firebase/firestore';
 import { 
   LayoutDashboard, ShoppingBag, Users, UserCircle, LogOut, Plus, Search, Download, 
@@ -29,34 +29,6 @@ import {
 /* =======================================================================
   [SECURITY AUDIT & BEST PRACTICES - FIRESTORE RULES]
   =======================================================================
-  Pastikan aturan ini aktif di Firebase Console -> Firestore -> Rules:
-  
-  rules_version = '2';
-  service cloud.firestore {
-    match /databases/{database}/documents {
-      function isAdmin() { return request.auth != null && request.auth.token.email == 'admin@website.com'; }
-      function isOwner(userId) { return request.auth != null && request.auth.uid == userId; }
-      
-      match /artifacts/{appId}/users/{userId}/profile/data {
-        allow read: if isOwner(userId) || isAdmin();
-        allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['subscriptionLevel', 'commissionBalance', 'rewardPoints']));
-        allow create: if isOwner(userId) || isAdmin();
-      }
-      match /artifacts/{appId}/users/{userId}/generations/{document=**} {
-        allow read, write: if isOwner(userId) || isAdmin();
-      }
-      match /artifacts/{appId}/public/data/userRegistry/{userId} {
-        allow read, write: if isAdmin() || (request.method == 'create' && isOwner(userId));
-      }
-      match /artifacts/{appId}/public/data/replicatedSites/{userId} {
-        allow read: if true;
-        allow write: if isOwner(userId) || isAdmin();
-      }
-      match /{document=**} {
-        allow read, write: if isAdmin() || request.auth != null; 
-      }
-    }
-  }
 */
 
 // ==========================================
@@ -67,7 +39,13 @@ const getFirebaseConfig = () => {
     return JSON.parse(__firebase_config);
   }
   return {
-    apiKey: "dummy", authDomain: "dummy", projectId: "dummy", storageBucket: "dummy", messagingSenderId: "dummy", appId: "dummy"
+    apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
+    authDomain: "memberarea-websiteku.firebaseapp.com",
+    projectId: "memberarea-websiteku",
+    storageBucket: "memberarea-websiteku.firebasestorage.app",
+    messagingSenderId: "9418923099",
+    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+    measurementId: "G-RQBKYLD4K5"
   };
 };
 
@@ -387,56 +365,80 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
+  // Menyimpan state refers untuk digunakan di dalam onSnapshot tanpa menyebabkan re-subscription
+  const isEditingLPRef = useRef(isEditingLP);
+  useEffect(() => { isEditingLPRef.current = isEditingLP; }, [isEditingLP]);
+
   // ==========================================
   // REAL-TIME SYNC ENGINE
   // ==========================================
   useEffect(() => {
     if (!user || !isConfigReady) return;
 
+    const errHandler = (e) => console.error("Firestore Error:", e);
+
     const unsubProfile = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
       if (d.exists()) { setUserData(d.data()); setProfileForm(prev => ({ ...prev, phone: d.data().phone || '', bank: d.data().bank || '', accountNo: d.data().accountNo || '' })); }
-    });
+    }, errHandler);
 
     const unsubMySite = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'replicatedSites', user.uid), (d) => {
-        if (d.exists()) { setMyLandingPage(d.data()); if(!isEditingLP) setEditLPForm(d.data()); } else setMyLandingPage(null);
-    });
+        if (d.exists()) { setMyLandingPage(d.data()); if(!isEditingLPRef.current) setEditLPForm(d.data()); } else setMyLandingPage(null);
+    }, errHandler);
 
     // Ajaib Foto History Sync
     const unsubPhotoHistory = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), (s) => {
-        const hData = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+        const hData = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+           const timeA = a.createdAt?.toMillis?.() || new Date(a.createdAt || 0).getTime();
+           const timeB = b.createdAt?.toMillis?.() || new Date(b.createdAt || 0).getTime();
+           return timeB - timeA;
+        });
         setPhotoHistory(hData);
-    });
+    }, errHandler);
 
-    const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), (s) => setChatMessages(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
+    const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
+    const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), (s) => setChatMessages(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
     const unsubModules = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'modules'), (s) => {
-        const mods = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+        const mods = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
         setAcademyModules(mods);
-        if (mods.length > 0 && !activeCourseId) { setActiveCourseId(mods[0].id); if(mods[0].lessons?.length > 0) setActiveLessonId(mods[0].lessons[0].id); }
-    });
+        setActiveCourseId(prev => (!prev && mods.length > 0) ? mods[0].id : prev);
+        setActiveLessonId(prev => (!prev && mods.length > 0 && mods[0].lessons?.length > 0) ? mods[0].lessons[0].id : prev);
+    }, errHandler);
 
-    const unsubAct = onSnapshot(query(collection(db, 'artifacts', appId, 'public', 'data', 'activities'), orderBy('createdAt', 'desc'), limit(1)), (s) => {
-        if(!s.empty) {
-            const data = s.docs[0].data();
+    // Filter Activities lokal
+    const unsubAct = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'activities'), (s) => {
+        const allAct = s.docs.map(d => d.data()).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        if(allAct.length > 0) {
+            const data = allAct[0];
             if (new Date() - new Date(data.createdAt) < 30000) { setLatestActivity(data); setTimeout(() => setLatestActivity(null), 7000); }
         }
-    });
+    }, errHandler);
 
     let adminUnsubRegistry = () => {}; let adminUnsubLPs = () => {};
     if (isAdmin) {
-      adminUnsubRegistry = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-      adminUnsubLPs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'replicatedSites'), (s) => setAllLandingPages(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+      adminUnsubRegistry = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'), (s) => setAllUsers(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
+      adminUnsubLPs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'replicatedSites'), (s) => setAllLandingPages(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
     }
 
-    const qTrans = isAdmin ? collection(db, 'artifacts', appId, 'public', 'data', 'transactions') : query(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), where('userId', '==', user.uid));
-    const unsubTrans = onSnapshot(qTrans, (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const qWd = isAdmin ? collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals') : query(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), where('userId', '==', user.uid));
-    const unsubWd = onSnapshot(qWd, (s) => setWithdrawals(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const qTix = isAdmin ? collection(db, 'artifacts', appId, 'public', 'data', 'tickets') : query(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), where('userId', '==', user.uid));
-    const unsubTickets = onSnapshot(qTix, (s) => setTickets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    // Load Transactions & filter lokal
+    const unsubTrans = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), (s) => {
+       const allT = s.docs.map(d => ({ id: d.id, ...d.data() }));
+       setTransactions(isAdmin ? allT : allT.filter(t => t.userId === user.uid));
+    }, errHandler);
+    
+    // Load Withdrawals & filter lokal
+    const unsubWd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), (s) => {
+       const allW = s.docs.map(d => ({ id: d.id, ...d.data() }));
+       setWithdrawals(isAdmin ? allW : allW.filter(w => w.userId === user.uid));
+    }, errHandler);
+    
+    // Load Tickets & filter lokal
+    const unsubTickets = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tickets'), (s) => {
+       const allT = s.docs.map(d => ({ id: d.id, ...d.data() }));
+       setTickets(isAdmin ? allT : allT.filter(t => t.userId === user.uid));
+    }, errHandler);
 
-    const unsubAi = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), (d) => { if (d.exists()) setAiConfig(d.data()); });
+    const unsubAi = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), (d) => { if (d.exists()) setAiConfig(d.data()); }, errHandler);
 
     return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubPhotoHistory(); };
   }, [user, isAdmin]);
