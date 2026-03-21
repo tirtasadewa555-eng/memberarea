@@ -293,10 +293,10 @@ export default function App() {
       const hasCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
-      // Auto-adaptif: Gunakan model publik (1.5-flash) jika ada custom API Key, 
+      // Auto-adaptif: Gunakan model publik terbaru (2.5-flash) jika ada custom API Key, 
       // gunakan model preview eksklusif jika menggunakan sistem proxy Canvas (Key Kosong).
       const modelName = type === 'text' 
-          ? (hasCustomKey ? "gemini-1.5-flash" : "gemini-2.5-flash-preview-09-2025") 
+          ? (hasCustomKey ? "gemini-2.5-flash" : "gemini-2.5-flash-preview-09-2025") 
           : "gemini-2.5-flash-image-preview";
 
       let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
@@ -313,7 +313,9 @@ export default function App() {
           if (res.status === 403 && !hasCustomKey) {
               errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
           } else if (res.status === 404 && type === 'image' && hasCustomKey) {
-              errorMsg = "API Key publik Anda tidak memiliki akses ke model Image Preview. Fitur Ajaib Foto hanya bisa dirender sepenuhnya dari dalam lingkungan Canvas.";
+              errorMsg = "API Key publik Anda tidak memiliki akses ke model Image Preview. Kosongkan API Key di menu Pengaturan agar menggunakan server internal Canvas.";
+          } else if (res.status === 404 && type === 'text' && hasCustomKey) {
+              errorMsg = "Model teks tidak ditemukan pada API Key Anda. Pastikan API Key valid atau kosongkan untuk menggunakan server internal.";
           }
           
           throw new Error(errorMsg);
@@ -557,7 +559,12 @@ export default function App() {
       else if (activePhotoFeature === 'ucapan') imgInst = `Create greeting card: ${superPrompt}. Preserve face identity.`;
 
       const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-      const imgData = await callGeminiAPI({ contents: [{ parts: imageParts }] }, 'image');
+      
+      // WAJIB menggunakan generationConfig untuk responseModalities gambar
+      const imgData = await callGeminiAPI({ 
+          contents: [{ parts: imageParts }],
+          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+      }, 'image');
       
       const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
       if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider.");
