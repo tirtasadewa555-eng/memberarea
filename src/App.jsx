@@ -290,12 +290,13 @@ export default function App() {
   };
 
   const callGeminiAPI = async (payload, type = 'text') => {
-      // Di dalam environment Canvas, kunci API diatur otomatis oleh sistem proxy.
-      // Kita harus selalu menggunakan string kosong ("") dan nama model preview secara eksplisit.
-      const keyToUse = "";
+      const hasCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
+      const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
+      // Auto-adaptif: Gunakan model publik (1.5-flash) jika ada custom API Key, 
+      // gunakan model preview eksklusif jika menggunakan sistem proxy Canvas (Key Kosong).
       const modelName = type === 'text' 
-          ? "gemini-2.5-flash-preview-09-2025" 
+          ? (hasCustomKey ? "gemini-1.5-flash" : "gemini-2.5-flash-preview-09-2025") 
           : "gemini-2.5-flash-image-preview";
 
       let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
@@ -306,7 +307,16 @@ export default function App() {
       
       if (!res.ok) {
           const errData = await res.json().catch(()=>({}));
-          throw new Error(errData.error?.message || `Error API: ${res.status}`);
+          let errorMsg = errData.error?.message || `Error API: ${res.status}`;
+          
+          // Penanganan Error Jenius: Terjemahkan error menjadi instruksi yang ramah pengguna
+          if (res.status === 403 && !hasCustomKey) {
+              errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
+          } else if (res.status === 404 && type === 'image' && hasCustomKey) {
+              errorMsg = "API Key publik Anda tidak memiliki akses ke model Image Preview. Fitur Ajaib Foto hanya bisa dirender sepenuhnya dari dalam lingkungan Canvas.";
+          }
+          
+          throw new Error(errorMsg);
       }
       
       return await res.json();
