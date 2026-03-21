@@ -24,16 +24,14 @@ import {
 // ==========================================
 // 1. KONFIGURASI SISTEM FIREBASE
 // ==========================================
-const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
-  return {
-    apiKey: "dummy",
-    authDomain: "dummy.firebaseapp.com",
-    projectId: "dummy-project",
-    storageBucket: "dummy.appspot.com",
-    messagingSenderId: "123456789",
-    appId: "1:123456789:web:abcdef"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
+  authDomain: "memberarea-websiteku.firebaseapp.com",
+  projectId: "memberarea-websiteku",
+  storageBucket: "memberarea-websiteku.firebasestorage.app",
+  messagingSenderId: "9418923099",
+  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+  measurementId: "G-RQBKYLD4K5"
 };
 
 const firebaseConfig = getFirebaseConfig();
