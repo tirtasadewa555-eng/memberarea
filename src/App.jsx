@@ -274,15 +274,14 @@ export default function App() {
   };
 
   // ==========================================
-  // LOGIC: API NETWORK (WITH RETRY)
+  // LOGIC: API NETWORK (WITH RETRY & FALLBACK)
   // ==========================================
-  const fetchWithRetry = async (url, options, maxRetries = 5) => {
+  const fetchWithRetry = async (url, options, maxRetries = 3) => {
     let delay = 1000;
     for (let i = 0; i < maxRetries; i++) {
       try {
         const response = await fetch(url, options);
-        if (response.ok) return response;
-        if ([400, 401, 403, 404].includes(response.status)) return response;
+        if (response.ok || [400, 401, 403, 404].includes(response.status)) return response;
       } catch (err) { if (i === maxRetries - 1) throw err; }
       await new Promise(resolve => setTimeout(resolve, delay));
       delay *= 2; 
@@ -290,26 +289,34 @@ export default function App() {
     throw new Error("Maksimal percobaan koneksi tercapai. Server AI sedang sibuk.");
   };
 
-  const fetchFromAI = async (promptText, jsonMode = false) => {
-      // Gunakan kunci bawaan jika kosong, jika ada custom API Key, gunakan gemini-1.5-flash agar tidak 404
-      const isCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
-      const keyToUse = isCustomKey ? aiConfig.apiKey.trim() : "";
-      const modelName = isCustomKey ? "gemini-1.5-flash" : "gemini-2.5-flash-preview-09-2025";
+  const callGeminiAPI = async (payload, type = 'text') => {
+      // Di dalam environment Canvas, kunci API diatur otomatis oleh sistem proxy.
+      // Kita harus selalu menggunakan string kosong ("") dan nama model preview secara eksplisit.
+      const keyToUse = "";
       
+      const modelName = type === 'text' 
+          ? "gemini-2.5-flash-preview-09-2025" 
+          : "gemini-2.5-flash-image-preview";
+
       let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       
-      try {
-          const payload = { contents: [{ parts: [{ text: promptText }] }] };
-          if (jsonMode) {
-              payload.generationConfig = { responseMimeType: "application/json" };
-          }
-          const res = await fetchWithRetry(url, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-          if(data.error) throw new Error(data.error.message);
-          return data.candidates[0].content.parts[0].text;
-      } catch (err) { throw err; }
+      const res = await fetchWithRetry(url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      
+      if (!res.ok) {
+          const errData = await res.json().catch(()=>({}));
+          throw new Error(errData.error?.message || `Error API: ${res.status}`);
+      }
+      
+      return await res.json();
+  };
+
+  const fetchFromAI = async (promptText, jsonMode = false) => {
+      const payload = { contents: [{ parts: [{ text: promptText }] }] };
+      if (jsonMode) payload.generationConfig = { responseMimeType: "application/json" };
+      const data = await callGeminiAPI(payload, 'text');
+      return data.candidates[0].content.parts[0].text;
   };
 
   // ==========================================
@@ -513,27 +520,7 @@ export default function App() {
 
     setIsGeneratingPhoto(true); setPhotoResult(null); setPhotoGenStatus('Menganalisis gambar dengan AI Visi...');
 
-    const isCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
-    const keyToUse = isCustomKey ? aiConfig.apiKey.trim() : "";
-
-    const callModel = async (modelName, payload) => {
-      let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
-      
-      let res = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok && res.status === 401 && keyToUse === "") {
-        await new Promise(r => setTimeout(r, 2000));
-        res = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      }
-      if (!res.ok) { const errData = await res.json().catch(()=>({})); throw new Error(errData.error?.message || `Error ${res.status}`); }
-      return JSON.parse(await res.text());
-    };
-
     try {
-      if (isCustomKey) {
-         throw new Error("Ajaib Foto butuh API Key bawaan! Harap KOSONGKAN isian API Key Global di menu 'Pengaturan API & AI' agar fitur foto berfungsi.");
-      }
-
-      const textModelName = "gemini-2.5-flash-preview-09-2025";
       let textPrompt = `Act as an Expert Prompt Engineer. Instruction: "${photoInstruction}". `;
       if (activePhotoFeature === 'gabung') textPrompt += `Write a prompt to seamlessly merge these uploaded images.`;
       else if (activePhotoFeature === 'photoshoot') textPrompt += `Write a prompt for a high-end product photoshoot placing this exact product into the scenario.`;
@@ -545,7 +532,7 @@ export default function App() {
       textPrompt += ` Output ONLY the prompt text in English.`;
 
       const textParts = [{ text: textPrompt }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-      const textData = await callModel(textModelName, { contents: [{ role: "user", parts: textParts }] });
+      const textData = await callGeminiAPI({ contents: [{ role: "user", parts: textParts }] }, 'text');
       const superPrompt = textData.candidates?.[0]?.content?.parts?.[0]?.text || photoInstruction;
       
       setPhotoGenStatus('Merender piksel mahakarya AI...');
@@ -560,9 +547,10 @@ export default function App() {
       else if (activePhotoFeature === 'ucapan') imgInst = `Create greeting card: ${superPrompt}. Preserve face identity.`;
 
       const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-      const imgData = await callModel('gemini-2.5-flash-image-preview', { contents: [{ parts: imageParts }] });
+      const imgData = await callGeminiAPI({ contents: [{ parts: imageParts }] }, 'image');
+      
       const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-      if (!generatedBase64) throw new Error("Gagal merender gambar.");
+      if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider.");
 
       const fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
       setPhotoResult(fullDataUrl);
