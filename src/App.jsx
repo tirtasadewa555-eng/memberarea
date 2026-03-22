@@ -190,7 +190,7 @@ export default function App() {
 
   // --- Derived States & Safe Fallbacks ---
   const rawTier = userData?.subscriptionLevel || 0;
-  const currentTier = TIER_LEVELS[rawTier] ? rawTier : 0; // Melindungi dari invalid tier DB
+  const currentTier = TIER_LEVELS[rawTier] ? rawTier : 0; 
   
   const affiliateBalance = userData?.commissionBalance || 0;
   const completedFiles = userData?.completedFiles || [];
@@ -360,7 +360,7 @@ export default function App() {
     
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+      const checkIsAdmin = u && u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
       setLoading(false);
@@ -1037,7 +1037,7 @@ export default function App() {
             <Lock size={48} />
         </div>
         <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Akses {title} Terkunci</h2>
-        <p className="text-slate-500 text-lg max-w-lg mx-auto">Fitur ini eksklusif untuk member <strong>{TIER_LEVELS[reqTier].name}</strong> ke atas. Upgrade lisensi Anda sekarang untuk membuka potensi penuh bisnis Anda.</p>
+        <p className="text-slate-500 text-lg max-w-lg mx-auto">Fitur ini eksklusif untuk member <strong>{TIER_LEVELS[reqTier]?.name || 'VIP'}</strong> ke atas. Upgrade lisensi Anda sekarang untuk membuka potensi penuh bisnis Anda.</p>
         <button onClick={() => setActiveTab('shop')} className="bg-indigo-600 text-white font-black px-10 py-4 rounded-2xl shadow-xl hover:scale-105 transition-all inline-flex items-center gap-3">
             <Zap size={20} /> UPGRADE LISENSI
         </button>
@@ -1210,7 +1210,9 @@ export default function App() {
                  <div className={`text-[8px] px-2 py-0.5 rounded-full uppercase font-black inline-block mt-1 ${userRank.bg} ${userRank.color} border ${userRank.border}`}>{userRank.icon} {userRank.name} RANK</div>
               )}
             </div>
-            <div className="h-10 w-10 bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white rounded-2xl flex items-center justify-center font-black shadow-lg">{userData?.name?.charAt(0).toUpperCase() || 'U'}</div>
+            <div className="h-10 w-10 bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white rounded-2xl flex items-center justify-center font-black shadow-lg">
+              {(userData?.name || user?.email || 'U').charAt(0).toUpperCase()}
+            </div>
           </div>
         </header>
 
@@ -1527,7 +1529,7 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'community' && (
              <div className="animate-fadeIn h-[calc(100vh-140px)] flex flex-col">
-                <div className="mb-6 shrink-0"><h2 className="text-3xl sm:text-4xl font-black font-['Outfit'] tracking-tight text-slate-900 leading-none">Komunitas VIP</h2></div>
+                <div className="mb-6 shrink-0"><h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight text-slate-900 leading-none">Komunitas VIP</h2></div>
                 <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-200 shadow-xl flex flex-col overflow-hidden relative">
                    <div className="flex-1 p-6 overflow-y-auto bg-slate-50 flex flex-col gap-4 custom-scrollbar">
                       {sortedChat.map(msg => {
