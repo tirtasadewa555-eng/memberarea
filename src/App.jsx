@@ -68,6 +68,12 @@ const GLOBAL_CSS = `
   @media print { body * { visibility: hidden; } #printable-certificate, #printable-certificate * { visibility: visible; } #printable-certificate { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 9999; background: white; } }
 `;
 
+// Helper Pengaman Error Render "Blank Screen"
+const getFirstName = (nameStr) => {
+  if (!nameStr) return 'Member';
+  return nameStr.split(' ')[0] || 'Member';
+};
+
 const sanitizeHTML = (str) => {
     if (!str) return '';
     return str.replace(/<script[^>]*>([\S\s]*?)<\/script>/gmi, '').replace(/<\/?\w+((\s+\w+(\s*=\s*(?:".*?"|'.*?'|[^'">\s]+))?)+\s*|\s*)\/?>/gmi, (m) => m.replace(/on\w+\s*=/gi, 'data-blocked=')).replace(/javascript:/gi, 'blocked:');
@@ -182,12 +188,15 @@ export default function App() {
   const aiEndRef = useRef(null);
   const isProcessingAction = useRef(false);
 
-  // --- Derived States ---
-  const currentTier = userData?.subscriptionLevel || 0;
+  // --- Derived States & Safe Fallbacks ---
+  const rawTier = userData?.subscriptionLevel || 0;
+  const currentTier = TIER_LEVELS[rawTier] ? rawTier : 0; // Melindungi dari invalid tier DB
+  
   const affiliateBalance = userData?.commissionBalance || 0;
   const completedFiles = userData?.completedFiles || [];
   const completedLessons = userData?.completedLessons || [];
   const userPoints = userData?.rewardPoints || 0;
+  const userFirstName = getFirstName(userData?.name);
 
   const userRank = useMemo(() => {
     if(currentTier >= 4) return { name: 'VIP ELITE', color: 'text-rose-600', bg: 'bg-rose-100', border:'border-rose-200', icon: <Crown size={14} /> };
@@ -267,7 +276,7 @@ export default function App() {
 
   const handleExportCSV = () => {
     if(!isAdmin) return;
-    const csvContent = "data:text/csv;charset=utf-8," + "Nama,Email,No WA,Tier,Saldo,Points\n" + allUsers.map(e => `${e.name},${e.email},${e.phone||'-'},${TIER_LEVELS[e.subscriptionLevel]?.name},${e.commissionBalance},${e.rewardPoints}`).join("\n");
+    const csvContent = "data:text/csv;charset=utf-8," + "Nama,Email,No WA,Tier,Saldo,Points\n" + allUsers.map(e => `${e.name},${e.email},${e.phone||'-'},${TIER_LEVELS[e.subscriptionLevel]?.name || 'Unknown'},${e.commissionBalance},${e.rewardPoints}`).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", "data_member_prospace.csv"); document.body.appendChild(link); link.click(); link.remove();
   };
@@ -447,7 +456,7 @@ export default function App() {
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(25) });
            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(25) });
            showToast("Sesi Fokus Selesai! Anda mendapatkan +25 Poin Reward 🏆", "success");
-           logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan sesi Deep Work! 🧠`, 'focus');
+           logActivity(`${userFirstName} menyelesaikan sesi Deep Work! 🧠`, 'focus');
            setFocusMode('break'); setFocusTimeLeft(5 * 60); 
        } catch(e) {}
     } else { showToast("Waktu istirahat habis. Saatnya kembali fokus!", "success"); setFocusMode('work'); setFocusTimeLeft(25 * 60); }
@@ -563,7 +572,7 @@ export default function App() {
       if (user) {
         try {
           await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), { feature: activePhotoFeature, instruction: photoInstruction, resultImage: fullDataUrl, createdAt: serverTimestamp() });
-          logActivity(`${userData?.name?.split(' ')[0] || 'Member'} membuat mahakarya di AI Studio Foto! 🎨`, 'learn');
+          logActivity(`${userFirstName} membuat mahakarya di AI Studio Foto! 🎨`, 'learn');
         } catch (e) {}
       }
     } catch (err) { showToast(err.message, "error"); } finally { setIsGeneratingPhoto(false); }
@@ -610,7 +619,7 @@ export default function App() {
         try {
             await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { subscriptionLevel: checkoutPkg.level });
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { subscriptionLevel: checkoutPkg.level });
-            logActivity(`${userData?.name?.split(' ')[0] || 'Member'} beralih ke paket ${checkoutPkg.name} 🔄`, 'upgrade');
+            logActivity(`${userFirstName} beralih ke paket ${checkoutPkg.name} 🔄`, 'upgrade');
             showToast(`Berhasil beralih ke paket ${checkoutPkg.name}!`, "success");
             setCheckoutPkg(null); setAppliedCoupon(null); setConfirmForm({senderName:'', senderBank:'', notes:''});
         } catch(err) { showToast("Gagal memproses paket gratis.", "error"); }
@@ -624,7 +633,7 @@ export default function App() {
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), { id: transId, userId: user.uid, userName: userData?.name || user?.email || 'Member', packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, price: trueFinalPrice, promoCode: appliedCoupon?.code || null, senderName: escapeInput(confirmForm.senderName), senderBank: escapeInput(confirmForm.senderBank), notes: escapeInput(confirmForm.notes), status: 'pending', createdAt: new Date().toISOString() });
-      logActivity(`${userData?.name?.split(' ')[0] || 'Seseorang'} memesan lisensi ${checkoutPkg.name}! 🔥`, 'order');
+      logActivity(`${userFirstName} memesan lisensi ${checkoutPkg.name}! 🔥`, 'order');
       openWhatsAppConfirmation({name: checkoutPkg.name, price: trueFinalPrice});
       setCheckoutPkg(null); setAppliedCoupon(null); setConfirmForm({senderName:'', senderBank:'', notes:''}); showToast("Konfirmasi terkirim!"); setActiveTab('transactions');
     } catch (err) {}
@@ -639,7 +648,7 @@ export default function App() {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'approved' });
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
-          logActivity(`Upgrade sukses! ${trans.userName.split(' ')[0]} kini member ${trans.packageName} 🏆`, 'upgrade');
+          logActivity(`Upgrade sukses! ${getFirstName(trans.userName)} kini member ${trans.packageName} 🏆`, 'upgrade');
           
           // PENYEMPURNAAN: Hitung Komisi Afiliasi berdasarkan Tier Referrer!
           const target = allUsers.find(u => u.uid === trans.userId);
@@ -688,7 +697,7 @@ export default function App() {
         rewardPoints: increment(lesson.points)
       });
       showToast(`Modul Selesai! +${lesson.points} Poin`, "success");
-      logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan materi ${lesson.title}! 📚`, 'learn');
+      logActivity(`${userFirstName} menyelesaikan materi ${lesson.title}! 📚`, 'learn');
       
       const allLessonsIds = academyModules.flatMap(m => m.lessons?.map(l => l.id) || []);
       const newCompleted = [...completedLessons, lesson.id];
@@ -796,7 +805,7 @@ export default function App() {
       const prompt = `Buatkan copywriting marketing untuk platform ${copilotForm.platform} dengan gaya bahasa ${copilotForm.tone} untuk memasarkan produk: ${copilotForm.product}. Format hasil dengan HTML dasar (seperti <br> untuk baris baru, <b> untuk tebal).`;
       const res = await fetchFromAI(prompt);
       setCopilotResult(res);
-      logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menggunakan AI Copilot untuk ${copilotForm.platform}! 🚀`, 'learn');
+      logActivity(`${userFirstName} menggunakan AI Copilot untuk ${copilotForm.platform}! 🚀`, 'learn');
     } catch(e) { showToast("Gagal generate copy.", "error"); }
     setIsGeneratingCopy(false);
   };
@@ -1191,7 +1200,7 @@ export default function App() {
                       <div className="inline-flex items-center gap-2 px-4 py-2 bg-white bg-opacity-10 rounded-full border border-white border-opacity-10 backdrop-blur-sm">
                          <span className="w-2 h-2 rounded-full bg-emerald-400"></span><span className="text-[10px] font-black uppercase tracking-widest text-white">{TIER_LEVELS[currentTier].name} Member</span>
                       </div>
-                      <h2 className="text-3xl sm:text-5xl font-black font-['Outfit'] tracking-tight leading-tight">Halo, {userData?.name?.split(' ')[0] || 'Member'}! 👋</h2>
+                      <h2 className="text-3xl sm:text-5xl font-black font-['Outfit'] tracking-tight leading-tight">Halo, {userFirstName}! 👋</h2>
                       <p className={`text-base max-w-xl mx-auto lg:mx-0 leading-relaxed ${currentTier >= 4 ? 'text-rose-100' : 'text-slate-400'}`}>
                         Akses modul interaktif di ProSpace Academy dan gunakan Ajaib Foto Studio untuk meroketkan bisnis digital Anda hari ini.
                       </p>
@@ -1945,7 +1954,7 @@ export default function App() {
                         {filteredUsers.map(m => (
                            <tr key={m.uid} className="hover:bg-slate-50">
                              <td className="px-8 py-6"><p className="font-black text-slate-900">{m.name}</p><p className="text-[11px] text-slate-500">{m.email}</p></td>
-                             <td className="px-8 py-6 uppercase font-black text-indigo-600 text-[10px]">{TIER_LEVELS[m.subscriptionLevel]?.name}</td>
+                             <td className="px-8 py-6 uppercase font-black text-indigo-600 text-[10px]">{TIER_LEVELS[m.subscriptionLevel]?.name || 'Unknown'}</td>
                              <td className="px-8 py-6 text-center">
                                 <div className="flex justify-center gap-2">
                                   <button onClick={()=>openUserCRMDetail(m)} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl" title="Edit Member CRM"><Edit3 size={16} /></button>
