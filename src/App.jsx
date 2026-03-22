@@ -6,19 +6,18 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, onSnapshot, collection, updateDoc, 
-  deleteDoc, addDoc, serverTimestamp, query, where, increment, orderBy, limit, arrayUnion, arrayRemove
+  deleteDoc, addDoc, serverTimestamp, increment, arrayUnion, arrayRemove
 } from 'firebase/firestore';
 import { 
-  LayoutDashboard, ShoppingBag, Users, UserCircle, LogOut, Plus, Search, Download, 
-  ShieldCheck, CreditCard, Settings, Menu, X, Bell, Trash2, Edit3, ChevronRight, 
-  FileText, Video, Box, Lock, MessageSquare, Banknote, CheckCircle, Clock, 
-  Megaphone, FolderLock, ArrowRight, AlertCircle, Activity, XCircle, LifeBuoy, 
-  MessageCircle, Network, Wallet, Copy, Save, Star, Send, Receipt, Tag, Trophy, Eye, 
-  CheckSquare, Square, Award, Sparkles, Crown, Gift, DownloadCloud, BadgeCheck, Bot, Zap,
-  Headphones, PlayCircle, PauseCircle, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
-  HelpCircle, CheckCircle2, ListPlus, Rocket, Wand2, Image as ImageIcon, Heart, Bookmark, 
-  Cpu, Key, Sparkles as MagicWand, Link as LinkIcon, Globe, LayoutTemplate, ChevronDown, ChevronUp,
-  Timer, MonitorPlay, ExternalLink, Upload, Paintbrush, Wrench, Camera, Layers, User, Loader2, EyeOff
+  LayoutDashboard, ShoppingBag, Users, LogOut, Plus, Search, Download, 
+  ShieldCheck, Settings, Menu, X, Trash2, Edit3, 
+  FileText, Video, Box, Lock, MessageSquare, Banknote, Clock, 
+  Megaphone, FolderLock, AlertCircle, Activity, XCircle, LifeBuoy, 
+  MessageCircle, Network, Wallet, Copy, Save, Star, Tag, Trophy, 
+  Award, Sparkles, Crown, Gift, DownloadCloud, Bot, Zap,
+  Headphones, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
+  HelpCircle, CheckCircle2, Rocket, Wand2, Image as ImageIcon, 
+  Cpu, Globe, LayoutTemplate, Timer, MonitorPlay, Upload, Paintbrush, Wrench, Camera, Layers, User, Loader2
 } from 'lucide-react';
 
 // ==========================================
@@ -28,12 +27,12 @@ const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
     apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
-  authDomain: "memberarea-websiteku.firebaseapp.com",
-  projectId: "memberarea-websiteku",
-  storageBucket: "memberarea-websiteku.firebasestorage.app",
-  messagingSenderId: "9418923099",
-  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-  measurementId: "G-RQBKYLD4K5"
+    authDomain: "memberarea-websiteku.firebaseapp.com",
+    projectId: "memberarea-websiteku",
+    storageBucket: "memberarea-websiteku.firebasestorage.app",
+    messagingSenderId: "9418923099",
+    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+    measurementId: "G-RQBKYLD4K5"
   };
 };
 
@@ -44,11 +43,13 @@ const appId = String(rawAppId).replace(/\//g, '-');
 const ADMIN_EMAIL = "admin@website.com"; 
 const WHATSAPP_ADMIN = "628123456789"; 
 
+// PENYEMPURNAAN PAKET & KOMISI DINAMIS
 const TIER_LEVELS = {
-  0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0, desc: 'Akses terbatas untuk member baru', features: ['Akses Modul Dasar', 'Kuis Harian AI'] },
-  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000, desc: 'Cocok untuk individu yang baru memulai', features: ['Akses Studio Ajaib Foto', 'Akses Semua Modul LMS', 'Grup Komunitas Terbatas', 'Sertifikat Digital'] },
-  2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 249000, desc: 'Untuk profesional dan bisnis berkembang', features: ['Semua Fitur Personal', 'Akses File Master (Tier 2)', 'AI Copilot Terbatas', 'Support Prioritas', 'Ruang Fokus VIP'] },
-  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000, desc: 'Akses penuh tanpa batas untuk tim & agensi', features: ['Semua Fitur Business', 'Akses File Master (All Tier)', 'Unlimited AI Copilot', 'Web Replikator Pribadi & Custom Domain', 'Dedicated Support 24/7'] }
+  0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0, comm: 0.10, desc: 'Akses terbatas untuk member baru', features: ['Akses Modul Dasar', 'Kuis Harian AI', 'Komisi Afiliasi 10%'] },
+  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000, comm: 0.20, desc: 'Cocok untuk individu yang baru memulai', features: ['Akses Studio Ajaib Foto', 'Akses Semua Modul LMS', 'Komisi Afiliasi 20%'] },
+  2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 249000, comm: 0.30, desc: 'Untuk profesional dan bisnis berkembang', features: ['Semua Fitur Personal', 'Akses AI Copilot Marketing', 'Ruang Fokus VIP', 'Komisi Afiliasi 30%'] },
+  3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000, comm: 0.40, desc: 'Akses penuh tanpa batas untuk tim & agensi', features: ['Semua Fitur Business', 'Web Replikator Pribadi', 'Akses Katalog Semua File', 'Komisi Afiliasi 40%'] },
+  4: { name: 'Ultimate VIP', color: 'text-rose-600', bg: 'bg-rose-50', price: 990000, comm: 0.50, desc: 'Spesial: Kasta Tertinggi Marketer Elit', features: ['Semua Fitur Agency', 'Komisi Afiliasi Maksimal 50%', 'Priority Support Helpdesk', 'Exclusive VIP Badge'] }
 };
 
 const GLOBAL_CSS = `
@@ -189,11 +190,12 @@ export default function App() {
   const userPoints = userData?.rewardPoints || 0;
 
   const userRank = useMemo(() => {
+    if(currentTier >= 4) return { name: 'VIP ELITE', color: 'text-rose-600', bg: 'bg-rose-100', border:'border-rose-200', icon: <Crown size={14} /> };
     if(userPoints >= 1000) return { name: 'Diamond', color: 'text-purple-600', bg: 'bg-purple-100', border:'border-purple-200', icon: <Crown size={14} /> };
     if(userPoints >= 300) return { name: 'Gold', color: 'text-amber-600', bg: 'bg-amber-100', border:'border-amber-200', icon: <Star size={14} /> };
     if(userPoints >= 100) return { name: 'Silver', color: 'text-slate-600', bg: 'bg-slate-200', border:'border-slate-300', icon: <Award size={14} /> };
     return { name: 'Bronze', color: 'text-orange-700', bg: 'bg-orange-100', border:'border-orange-200', icon: <Sparkles size={14} /> };
-  }, [userPoints]);
+  }, [userPoints, currentTier]);
 
   const filteredUsers = useMemo(() => {
     let list = [...allUsers];
@@ -235,9 +237,6 @@ export default function App() {
         pendingWd: withdrawals.filter(w => w.status === 'pending').length 
     };
   }, [transactions, tickets, withdrawals]);
-
-  const approvedPercentage = transactions.length > 0 ? Math.round((adminStats.approvedTrans / transactions.length) * 100) : 0;
-  const pendingPercentage = transactions.length > 0 ? Math.round((adminStats.pendingTrans / transactions.length) * 100) : 0;
 
   const leaderboardData = useMemo(() => {
     return allUsers.map(u => ({ uid: u.uid, name: u.name, totalEarned: (u.commissionBalance || 0) + (withdrawals.filter(w => w.userId === u.uid && w.status === 'approved').reduce((a, b) => a + b.amount, 0)) }))
@@ -293,8 +292,6 @@ export default function App() {
       const hasCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
-      // Auto-adaptif: Gunakan model publik terbaru (2.5-flash) jika ada custom API Key, 
-      // gunakan model preview eksklusif jika menggunakan sistem proxy Canvas (Key Kosong).
       const modelName = type === 'text' 
           ? (hasCustomKey ? "gemini-2.5-flash" : "gemini-2.5-flash-preview-09-2025") 
           : "gemini-2.5-flash-image-preview";
@@ -309,7 +306,6 @@ export default function App() {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
           
-          // Penanganan Error Jenius: Terjemahkan error menjadi instruksi yang ramah pengguna
           if (res.status === 403 && !hasCustomKey) {
               errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
           } else if (res.status === 404 && type === 'image' && hasCustomKey) {
@@ -317,10 +313,8 @@ export default function App() {
           } else if (res.status === 404 && type === 'text' && hasCustomKey) {
               errorMsg = "Model teks tidak ditemukan pada API Key Anda. Pastikan API Key valid atau kosongkan untuk menggunakan server internal.";
           }
-          
           throw new Error(errorMsg);
       }
-      
       return await res.json();
   };
 
@@ -332,7 +326,7 @@ export default function App() {
   };
 
   // ==========================================
-  // LOGIC: INITIAL FETCH & REPLICATED SITE
+  // LOGIC: INITIAL FETCH & REALTIME SYNC
   // ==========================================
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
@@ -369,12 +363,8 @@ export default function App() {
   const isEditingLPRef = useRef(isEditingLP);
   useEffect(() => { isEditingLPRef.current = isEditingLP; }, [isEditingLP]);
 
-  // ==========================================
-  // REAL-TIME SYNC ENGINE
-  // ==========================================
   useEffect(() => {
     if (!user || !isConfigReady) return;
-
     const errHandler = (e) => console.error("Firestore Error:", e);
 
     const unsubProfile = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
@@ -385,7 +375,6 @@ export default function App() {
         if (d.exists()) { setMyLandingPage(d.data()); if(!isEditingLPRef.current) setEditLPForm(d.data()); } else setMyLandingPage(null);
     }, errHandler);
 
-    // Ajaib Foto History Sync
     const unsubPhotoHistory = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), (s) => {
         const hData = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
            const timeA = a.createdAt?.toMillis?.() || new Date(a.createdAt || 0).getTime();
@@ -471,7 +460,6 @@ export default function App() {
   // ==========================================
   // LOGIC ACTIONS: AJAIB FOTO (IMAGE STUDIO)
   // ==========================================
-  
   const photoPresets = {
     photoshoot: ["Studio Minimalis dengan pencahayaan dramatis", "Di atas batu karang pantai saat matahari terbenam (Golden Hour)", "Panggung podium marmer dengan aksen daun tropis", "Gaya Cyberpunk dengan lampu neon ungu dan biru"],
     model: ["Wanita Asia profesional, 25 tahun, memakai jas kantoran elegan, rambut sebahu, tersenyum simpul, latar blur studio", "Pria atletis, memakai pakaian olahraga futuristik, sedang berlari di taman kota pagi hari, pencahayaan sinematik"],
@@ -560,7 +548,6 @@ export default function App() {
 
       const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
       
-      // WAJIB menggunakan generationConfig untuk responseModalities gambar
       const imgData = await callGeminiAPI({ 
           contents: [{ parts: imageParts }],
           generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
@@ -590,7 +577,6 @@ export default function App() {
   // ==========================================
   // LOGIC ACTIONS: CORE SYSTEM
   // ==========================================
-  
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!isConfigReady) return showToast("Config Firebase belum diisi!", "error");
@@ -608,19 +594,6 @@ export default function App() {
       } else { await signInWithEmailAndPassword(auth, safeEmail, formData.password); showToast("Selamat Datang!"); }
     } catch (err) { showToast("Gagal masuk/daftar.", "error"); }
     setAuthLoading(false); isProcessingAction.current = false;
-  };
-
-  const handleDailyCheckIn = async () => {
-    if (isProcessingAction.current) return;
-    isProcessingAction.current = true;
-    const today = new Date().toDateString();
-    if (userData?.lastCheckInDate === today) { isProcessingAction.current = false; return showToast("Sudah klaim hari ini.", "error"); }
-    try {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { rewardPoints: increment(10), lastCheckInDate: today });
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { rewardPoints: increment(10), lastCheckInDate: today });
-        showToast("Klaim +10 Poin Harian! 🎉", "success");
-    } catch (e) {}
-    isProcessingAction.current = false;
   };
 
   const handlePurchaseRequest = async (e) => {
@@ -650,13 +623,20 @@ export default function App() {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', trans.userId), { subscriptionLevel: trans.packageLevel });
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
           logActivity(`Upgrade sukses! ${trans.userName.split(' ')[0]} kini member ${trans.packageName} 🏆`, 'upgrade');
+          
+          // PENYEMPURNAAN: Hitung Komisi Afiliasi berdasarkan Tier Referrer!
           const target = allUsers.find(u => u.uid === trans.userId);
           if (target && target.referredBy) {
-              const comm = trans.price * 0.20; 
+              // Ambil tier si pemberi referal dari Registry
+              const referrerData = allUsers.find(u => u.uid === target.referredBy);
+              const refTier = referrerData?.subscriptionLevel || 0;
+              const commRate = TIER_LEVELS[refTier]?.comm || 0.10;
+              const comm = trans.price * commRate; 
+              
               await updateDoc(doc(db, 'artifacts', appId, 'users', target.referredBy, 'profile', 'data'), { commissionBalance: increment(comm) });
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', target.referredBy), { commissionBalance: increment(comm) });
           }
-          showToast("Member di-upgrade!");
+          showToast("Member di-upgrade dan fitur langsung terbuka!");
       } else { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' }); showToast("Ditolak", "error"); }
     } catch (err) {}
     isProcessingAction.current = false;
@@ -675,7 +655,6 @@ export default function App() {
     isProcessingAction.current = false;
   };
 
-  // --- Fungsi yang Dilengkapi ---
   const handleCompleteLearning = async (lesson, isQuiz, selectedIdx) => {
     if (isProcessingAction.current) return;
     isProcessingAction.current = true;
@@ -695,7 +674,6 @@ export default function App() {
       showToast(`Modul Selesai! +${lesson.points} Poin`, "success");
       logActivity(`${userData?.name?.split(' ')[0] || 'Member'} menyelesaikan materi ${lesson.title}! 📚`, 'learn');
       
-      // Auto check certificate completion
       const allLessonsIds = academyModules.flatMap(m => m.lessons?.map(l => l.id) || []);
       const newCompleted = [...completedLessons, lesson.id];
       const hasAll = allLessonsIds.every(id => newCompleted.includes(id));
@@ -999,6 +977,20 @@ export default function App() {
   // RENDER COMPONENTS
   // ==========================================
   
+  // KOMPONEN UNTUK MENGUNCI FITUR YANG BELUM DIBELI
+  const FeatureLockScreen = ({ title, reqTier, icon: Icon }) => (
+    <div className="animate-fadeIn max-w-4xl mx-auto text-center space-y-8 py-20 px-6">
+        <div className="inline-flex items-center justify-center w-24 h-24 bg-slate-100 text-slate-400 rounded-full mb-4 shadow-inner">
+            <Lock size={48} />
+        </div>
+        <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Akses {title} Terkunci</h2>
+        <p className="text-slate-500 text-lg max-w-lg mx-auto">Fitur ini eksklusif untuk member <strong>{TIER_LEVELS[reqTier].name}</strong> ke atas. Upgrade lisensi Anda sekarang untuk membuka potensi penuh bisnis Anda.</p>
+        <button onClick={() => setActiveTab('shop')} className="bg-indigo-600 text-white font-black px-10 py-4 rounded-2xl shadow-xl hover:scale-105 transition-all inline-flex items-center gap-3">
+            <Zap size={20} /> UPGRADE LISENSI
+        </button>
+    </div>
+  );
+
   const ProFileCard = ({ file, currentTier, isCompleted, onToggleProgress, isAdminCard }) => {
     const isLocked = currentTier < file.reqLevel && !isAdmin;
     return (
@@ -1119,7 +1111,6 @@ export default function App() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4 mt-2">Member Menu</p>
               <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20} />} label="Dashboard Utama" />
               
-              {/* === MENU BARU: AJAIB FOTO STUDIO === */}
               <div className="my-4 border-b border-slate-100"></div>
               <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-4 px-4 mt-2">Studio Kreatif AI</p>
               <NavBtn active={activeTab==='ai_studio'} onClick={()=>{setActiveTab('ai_studio'); closeSidebarMobile();}} icon={<Wand2 size={20} />} label="Studio Ajaib Foto" />
@@ -1177,15 +1168,15 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'dashboard' && !isAdmin && (
             <div className="space-y-8">
-                <div className="bg-slate-900 rounded-[3rem] p-8 sm:p-14 text-white relative shadow-2xl overflow-hidden">
-                  <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500 bg-opacity-20 rounded-full blur-[100px]"></div>
+                <div className={`rounded-[3rem] p-8 sm:p-14 text-white relative shadow-2xl overflow-hidden ${currentTier >= 4 ? 'bg-gradient-to-r from-rose-600 to-orange-600' : 'bg-slate-900'}`}>
+                  <div className="absolute top-0 right-0 w-80 h-80 bg-white bg-opacity-20 rounded-full blur-[100px]"></div>
                   <div className="relative z-10 flex flex-col lg:flex-row justify-between items-center gap-10">
                     <div className="space-y-4 text-center lg:text-left w-full lg:w-2/3">
                       <div className="inline-flex items-center gap-2 px-4 py-2 bg-white bg-opacity-10 rounded-full border border-white border-opacity-10 backdrop-blur-sm">
-                         <span className="w-2 h-2 rounded-full bg-emerald-400"></span><span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{TIER_LEVELS[currentTier].name} Member</span>
+                         <span className="w-2 h-2 rounded-full bg-emerald-400"></span><span className="text-[10px] font-black uppercase tracking-widest text-white">{TIER_LEVELS[currentTier].name} Member</span>
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-black font-['Outfit'] tracking-tight leading-tight">Halo, {userData?.name?.split(' ')[0] || 'Member'}! 👋</h2>
-                      <p className="text-slate-400 text-base max-w-xl mx-auto lg:mx-0 leading-relaxed">
+                      <p className={`text-base max-w-xl mx-auto lg:mx-0 leading-relaxed ${currentTier >= 4 ? 'text-rose-100' : 'text-slate-400'}`}>
                         Akses modul interaktif di ProSpace Academy dan gunakan Ajaib Foto Studio untuk meroketkan bisnis digital Anda hari ini.
                       </p>
                       <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
@@ -1208,6 +1199,7 @@ export default function App() {
           {/* TAB: AJAIB FOTO STUDIO */}
           {/* ==================================================== */}
           {activeTab === 'ai_studio' && !isAdmin && (
+             currentTier < 1 ? <FeatureLockScreen title="Studio Ajaib Foto" reqTier={1} /> :
              <div className="animate-fadeIn space-y-6">
                 <div className="mb-6">
                    <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight flex items-center gap-3">
@@ -1411,6 +1403,7 @@ export default function App() {
           {/* TAB: RUANG FOKUS VIP (POMODORO) */}
           {/* ==================================================== */}
           {activeTab === 'focus' && !isAdmin && (
+             currentTier < 2 ? <FeatureLockScreen title="Ruang Fokus VIP" reqTier={2} /> :
              <div className="animate-fadeIn max-w-2xl mx-auto space-y-8 text-center">
                  <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-100 text-indigo-600 rounded-full mb-2 shadow-lg shadow-indigo-100"><Timer size={40} /></div>
                  <h2 className="text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Ruang Fokus VIP</h2>
@@ -1530,39 +1523,34 @@ export default function App() {
           {/* TAB: WEB REPLIKATOR PRIBADI (MEMBER) */}
           {/* ==================================================== */}
           {activeTab === 'landingpage' && !isAdmin && (
+             currentTier < 3 ? <FeatureLockScreen title="Web Replikator" reqTier={3} /> :
              <div className="animate-fadeIn space-y-8 max-w-4xl mx-auto">
                  <div className="text-center space-y-4 mb-10">
                      <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-2 shadow-lg shadow-blue-100"><LayoutTemplate size={32} /></div>
                      <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight">Web Replikator AI</h2>
                  </div>
                  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8 sm:p-12 overflow-hidden">
-                     {currentTier < 2 ? (
-                         <div className="text-center bg-amber-50 border border-amber-200 rounded-2xl p-10"><Lock size={48} className="mx-auto text-amber-400 mb-4" /><h3 className="text-xl font-black text-amber-800 mb-2">Akses Eksklusif Terkunci</h3><button onClick={() => setActiveTab('shop')} className="bg-amber-500 text-white font-black px-8 py-3 rounded-xl shadow-lg hover:bg-amber-600 transition-all">UPGRADE BUSINESS</button></div>
+                     {!myLandingPage ? (
+                         <div className="text-center py-10"><button onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-2xl shadow-xl hover:scale-105 transition-transform flex items-center justify-center gap-3 mx-auto disabled:opacity-50">{isGeneratingLP ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Wand2 size={24} />}{isGeneratingLP ? 'MERAKIT...' : 'GENERATE LANDING PAGE'}</button></div>
                      ) : (
-                         <>
-                             {!myLandingPage ? (
-                                 <div className="text-center py-10"><button onClick={handleGenerateLandingPage} disabled={isGeneratingLP} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black px-10 py-5 rounded-2xl shadow-xl hover:scale-105 transition-transform flex items-center justify-center gap-3 mx-auto disabled:opacity-50">{isGeneratingLP ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Wand2 size={24} />}{isGeneratingLP ? 'MERAKIT...' : 'GENERATE LANDING PAGE'}</button></div>
-                             ) : (
-                                 <div className="space-y-10">
-                                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                                         <div><p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Status Web</p><div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]"></span><span className="font-black text-slate-800 text-lg">ONLINE</span></div></div>
-                                         <div className="flex gap-3 w-full sm:w-auto">
-                                            <button onClick={() => window.open(`https://member.bagihosting.com/?ref=${user?.uid}`, '_blank')} className="flex-1 sm:flex-none bg-slate-900 text-white font-black px-6 py-3.5 rounded-xl hover:bg-indigo-600 transition-all text-sm flex items-center justify-center gap-2 shadow-lg"><Globe size={18} /> KUNJUNGI WEB</button>
-                                            <button onClick={() => setIsEditingLP(!isEditingLP)} className={`flex-1 sm:flex-none font-black px-6 py-3.5 rounded-xl transition-all text-sm flex items-center justify-center gap-2 border-2 ${isEditingLP ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}><Edit3 size={18} /> {isEditingLP ? 'TUTUP EDITOR' : 'EDIT KONTEN'}</button>
-                                         </div>
-                                     </div>
-                                     <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 relative overflow-hidden"><p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-3 relative z-10">Link Referal</p><div className="flex bg-white border border-indigo-200 rounded-xl p-2 items-center relative z-10 shadow-sm"><input type="text" readOnly value={`https://member.bagihosting.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-700 px-3 truncate" /><button onClick={() => copyToClipboard(`https://member.bagihosting.com/?ref=${user?.uid}`)} className="bg-indigo-600 text-white px-5 py-3 rounded-lg font-black text-xs hover:bg-indigo-700 transition-colors shadow-md">COPY LINK</button></div></div>
-                                     {isEditingLP && (
-                                         <form onSubmit={handleUpdateLandingPage} className="border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6 bg-white animate-slideUp relative">
-                                            <h3 className="font-black text-lg text-slate-800 mb-6 border-b border-slate-100 pb-4">Edit Konten Halaman</h3>
-                                            <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Headline Utama</label><textarea rows="2" value={editLPForm?.heroHeadline || ''} onChange={e=>setEditLPForm({...editLPForm, heroHeadline: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-bold text-sm resize-none"></textarea></div>
-                                            <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Custom Domain</label><input type="text" value={editLPForm?.customDomain || ''} onChange={e=>setEditLPForm({...editLPForm, customDomain: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-bold text-sm" placeholder="Tanpa https:// (misal: www.webku.com)" /></div>
-                                            <div className="pt-6 border-t border-slate-100 flex gap-4"><button type="submit" disabled={isProcessingAction.current} className="flex-1 bg-indigo-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex justify-center items-center gap-2"><Save size={18} /> SIMPAN</button></div>
-                                         </form>
-                                     )}
+                         <div className="space-y-10">
+                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                                 <div><p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Status Web</p><div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]"></span><span className="font-black text-slate-800 text-lg">ONLINE</span></div></div>
+                                 <div className="flex gap-3 w-full sm:w-auto">
+                                    <button onClick={() => window.open(`https://member.bagihosting.com/?ref=${user?.uid}`, '_blank')} className="flex-1 sm:flex-none bg-slate-900 text-white font-black px-6 py-3.5 rounded-xl hover:bg-indigo-600 transition-all text-sm flex items-center justify-center gap-2 shadow-lg"><Globe size={18} /> KUNJUNGI WEB</button>
+                                    <button onClick={() => setIsEditingLP(!isEditingLP)} className={`flex-1 sm:flex-none font-black px-6 py-3.5 rounded-xl transition-all text-sm flex items-center justify-center gap-2 border-2 ${isEditingLP ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}><Edit3 size={18} /> {isEditingLP ? 'TUTUP EDITOR' : 'EDIT KONTEN'}</button>
                                  </div>
+                             </div>
+                             <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 relative overflow-hidden"><p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-3 relative z-10">Link Referal</p><div className="flex bg-white border border-indigo-200 rounded-xl p-2 items-center relative z-10 shadow-sm"><input type="text" readOnly value={`https://member.bagihosting.com/?ref=${user?.uid}`} className="bg-transparent flex-1 outline-none text-sm font-bold text-slate-700 px-3 truncate" /><button onClick={() => copyToClipboard(`https://member.bagihosting.com/?ref=${user?.uid}`)} className="bg-indigo-600 text-white px-5 py-3 rounded-lg font-black text-xs hover:bg-indigo-700 transition-colors shadow-md">COPY LINK</button></div></div>
+                             {isEditingLP && (
+                                 <form onSubmit={handleUpdateLandingPage} className="border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6 bg-white animate-slideUp relative">
+                                    <h3 className="font-black text-lg text-slate-800 mb-6 border-b border-slate-100 pb-4">Edit Konten Halaman</h3>
+                                    <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Headline Utama</label><textarea rows="2" value={editLPForm?.heroHeadline || ''} onChange={e=>setEditLPForm({...editLPForm, heroHeadline: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-bold text-sm resize-none"></textarea></div>
+                                    <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Custom Domain</label><input type="text" value={editLPForm?.customDomain || ''} onChange={e=>setEditLPForm({...editLPForm, customDomain: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 font-bold text-sm" placeholder="Tanpa https:// (misal: www.webku.com)" /></div>
+                                    <div className="pt-6 border-t border-slate-100 flex gap-4"><button type="submit" disabled={isProcessingAction.current} className="flex-1 bg-indigo-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex justify-center items-center gap-2"><Save size={18} /> SIMPAN</button></div>
+                                 </form>
                              )}
-                         </>
+                         </div>
                      )}
                  </div>
              </div>
@@ -1572,6 +1560,7 @@ export default function App() {
           {/* TAB: MARKETING COPILOT */}
           {/* ==================================================== */}
           {activeTab === 'copilot' && !isAdmin && (
+             currentTier < 2 ? <FeatureLockScreen title="Marketing Copilot AI" reqTier={2} /> :
              <div className="animate-fadeIn space-y-8">
                  <div className="text-center sm:text-left mb-6">
                      <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] flex items-center justify-center sm:justify-start gap-3"><Rocket className="text-indigo-600" size={36} /> AI Marketing Copilot</h2>
@@ -1606,10 +1595,10 @@ export default function App() {
              <div className="animate-fadeIn space-y-10">
                 <h2 className="text-3xl font-black text-slate-900">Program Afiliasi</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className="bg-indigo-600 rounded-[2rem] p-10 text-white shadow-xl shadow-indigo-200">
-                      <p className="text-[10px] font-black uppercase text-indigo-200">Saldo Komisi Aktif</p>
+                   <div className={`rounded-[2rem] p-10 text-white shadow-xl ${currentTier >= 4 ? 'bg-gradient-to-r from-rose-600 to-orange-600' : 'bg-indigo-600'}`}>
+                      <p className="text-[10px] font-black uppercase text-white opacity-80">Saldo Komisi Aktif (Bagi Hasil {TIER_LEVELS[currentTier]?.comm * 100}%)</p>
                       <p className="text-5xl font-black mt-2 font-['Outfit']">Rp {affiliateBalance.toLocaleString('id-ID')}</p>
-                      <button onClick={handleRequestWithdrawal} disabled={isProcessingAction.current} className="mt-8 bg-white text-indigo-600 px-6 py-4 rounded-xl font-black text-sm shadow-lg hover:scale-105 transition-transform disabled:opacity-50">TARIK SALDO KE REKENING</button>
+                      <button onClick={handleRequestWithdrawal} disabled={isProcessingAction.current} className={`mt-8 px-6 py-4 rounded-xl font-black text-sm shadow-lg hover:scale-105 transition-transform disabled:opacity-50 ${currentTier >= 4 ? 'bg-white text-rose-600' : 'bg-white text-indigo-600'}`}>TARIK SALDO KE REKENING</button>
                    </div>
                    <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col justify-center">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Link Referral Anda</p>
@@ -1654,16 +1643,21 @@ export default function App() {
           {activeTab === 'shop' && !isAdmin && (
              <div className="animate-fadeIn space-y-12">
                <div className="text-center max-w-2xl mx-auto space-y-4 px-4"><span className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase">Pricing Plan</span><h2 className="text-4xl font-black text-slate-900 font-['Outfit']">Pilih Paket Terbaik</h2></div>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                 {[1, 2, 3].map(lv => {
-                   const isActive = currentTier === lv; const isPassed = currentTier > lv; const isPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                 {[1, 2, 3, 4].map(lv => {
+                   const isActive = currentTier === lv; 
+                   const isPassed = currentTier > lv; 
+                   const isPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
+                   const isVIP = lv === 4;
+
                    return (
-                     <div key={lv} className={`bg-white rounded-[2rem] border-2 p-10 flex flex-col h-full transition-all ${isActive ? 'border-indigo-600 shadow-2xl' : 'border-slate-100 hover:border-slate-300 shadow-xl'}`}>
-                        <h3 className="text-2xl font-black text-slate-900 mb-2 uppercase">{TIER_LEVELS[lv].name}</h3>
-                        <p className="text-sm text-slate-500 mb-6 min-h-[40px]">{TIER_LEVELS[lv].desc}</p>
-                        <span className="text-3xl font-black text-indigo-600 mb-8">Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
-                        <ul className="space-y-4 mb-8 flex-1">{TIER_LEVELS[lv].features.map((f, i) => (<li key={i} className="flex items-start gap-3"><CheckCircle2 size={18} className="text-emerald-500 shrink-0" /><span className="text-sm font-medium text-slate-600">{f}</span></li>))}</ul>
-                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv});}} disabled={isActive||isPassed||isPending} className={`w-full py-5 rounded-2xl font-black ${isActive||isPassed||isPending ? 'bg-slate-100 text-slate-400' : 'bg-slate-900 text-white hover:bg-indigo-600'}`}>{isActive ? 'AKTIF' : isPassed ? 'TERLEWATI' : isPending ? 'VALIDASI' : 'PILIH PAKET'}</button>
+                     <div key={lv} className={`bg-white rounded-[2rem] border-2 p-8 flex flex-col h-full transition-all relative ${isVIP ? 'border-amber-400 shadow-[0_20px_50px_rgba(251,191,36,0.2)] scale-[1.02]' : isActive ? 'border-indigo-600 shadow-2xl' : 'border-slate-100 hover:border-slate-300 shadow-xl'}`}>
+                        {isVIP && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-400 to-orange-500 text-white px-4 py-1 rounded-full text-[10px] font-black tracking-widest flex items-center gap-1 shadow-lg"><Crown size={12}/> BEST VALUE</div>}
+                        <h3 className={`text-2xl font-black mb-2 uppercase ${isVIP ? 'text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-rose-500' : 'text-slate-900'}`}>{TIER_LEVELS[lv].name}</h3>
+                        <p className="text-xs text-slate-500 mb-6 min-h-[40px] font-medium">{TIER_LEVELS[lv].desc}</p>
+                        <span className={`text-3xl font-black mb-8 ${isVIP ? 'text-rose-600' : 'text-indigo-600'}`}>Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
+                        <ul className="space-y-4 mb-8 flex-1">{TIER_LEVELS[lv].features.map((f, i) => (<li key={i} className="flex items-start gap-3"><CheckCircle2 size={18} className={`${isVIP ? 'text-rose-500' : 'text-emerald-500'} shrink-0`} /><span className="text-sm font-medium text-slate-600">{f}</span></li>))}</ul>
+                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); window.scrollTo(0,0);}} disabled={isActive||isPassed||isPending} className={`w-full py-5 rounded-2xl font-black ${isActive||isPassed||isPending ? 'bg-slate-100 text-slate-400' : isVIP ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white hover:scale-105 shadow-lg' : 'bg-slate-900 text-white hover:bg-indigo-600'}`}>{isActive ? 'AKTIF SAAT INI' : isPassed ? 'TERLEWATI' : isPending ? 'MENUNGGU VALIDASI' : 'PILIH PAKET INI'}</button>
                      </div>
                    )
                  })}
@@ -2061,7 +2055,7 @@ export default function App() {
                          <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Nama File</label><input type="text" required value={productForm.name} onChange={e=>setProductForm({...productForm, name: e.target.value})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm" /></div>
                          <div className="space-y-2"><label className="text-xs font-bold text-slate-500">URL / Link Download</label><input type="url" required value={productForm.url} onChange={e=>setProductForm({...productForm, url: e.target.value})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm" /></div>
                          <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Kategori</label><select value={productForm.category} onChange={e=>setProductForm({...productForm, category: e.target.value})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm"><option value="Ebook">Ebook</option><option value="Video">Video / Course</option><option value="Asset">Asset Grafis / Code</option></select></div>
-                         <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Minimal Tier (0=Free, 3=Agency)</label><select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel: parseInt(e.target.value)})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm">{[0,1,2,3].map(lv => <option key={lv} value={lv}>Tier {lv} - {TIER_LEVELS[lv].name}</option>)}</select></div>
+                         <div className="space-y-2"><label className="text-xs font-bold text-slate-500">Minimal Tier Akses</label><select value={productForm.reqLevel} onChange={e=>setProductForm({...productForm, reqLevel: parseInt(e.target.value)})} className="w-full px-4 py-3 rounded-xl border focus:ring-2 outline-none font-bold text-sm">{[0,1,2,3,4].map(lv => <option key={lv} value={lv}>Tier {lv} - {TIER_LEVELS[lv].name}</option>)}</select></div>
                          <div className="col-span-full pt-4">
                             <button type="submit" disabled={isProcessingAction.current} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-sm shadow-md hover:bg-indigo-700">{editingId ? 'SIMPAN PERUBAHAN' : 'TAMBAH MASTER FILE'}</button>
                             {editingId && <button type="button" onClick={() => {setEditingId(null); setProductForm({ name: '', size: '', reqLevel: 1, url: '', category: 'Ebook' });}} className="ml-4 px-8 py-3 rounded-xl font-black text-sm text-slate-500 hover:bg-slate-100">BATAL</button>}
@@ -2069,7 +2063,7 @@ export default function App() {
                      </form>
                  </div>
                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                   {files.map(f => (<ProFileCard key={f.id} file={f} currentTier={3} isCompleted={false} onToggleProgress={()=>{}} isAdminCard={true} />))}
+                   {files.map(f => (<ProFileCard key={f.id} file={f} currentTier={5} isCompleted={false} onToggleProgress={()=>{}} isAdminCard={true} />))}
                  </div>
               </div>
           )}
@@ -2118,7 +2112,7 @@ export default function App() {
                   <div className="space-y-2 border-t border-slate-100 pt-6">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Level Lisensi (Tier)</label>
                       <select className="w-full px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm" value={editUserForm.subscriptionLevel} onChange={e=>setEditUserForm({...editUserForm, subscriptionLevel: e.target.value})}>
-                          {[0,1,2,3].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}
+                          {[0,1,2,3,4].map(lv => <option key={lv} value={lv}>{TIER_LEVELS[lv].name}</option>)}
                       </select>
                   </div>
                   <button type="submit" disabled={isProcessingAction.current} className="w-full bg-slate-900 text-white font-black py-4 rounded-xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50"><Save size={18} /> UPDATE DATA MEMBER</button>
