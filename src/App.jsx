@@ -598,14 +598,31 @@ export default function App() {
 
   const handlePurchaseRequest = async (e) => {
     e.preventDefault();
-    if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Form harus lengkap!", "error");
     if (isProcessingAction.current) return;
+
+    const basePrice = checkoutPkg.price || 0;
+    const discountVal = appliedCoupon && appliedCoupon.active ? appliedCoupon.discount : 0;
+    const trueFinalPrice = basePrice - (basePrice * discountVal / 100);
+
+    // AUTO APPROVE untuk Paket Free (0) atau Diskon 100%
+    if (trueFinalPrice <= 0) {
+        isProcessingAction.current = true;
+        try {
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { subscriptionLevel: checkoutPkg.level });
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid), { subscriptionLevel: checkoutPkg.level });
+            logActivity(`${userData?.name?.split(' ')[0] || 'Member'} beralih ke paket ${checkoutPkg.name} 🔄`, 'upgrade');
+            showToast(`Berhasil beralih ke paket ${checkoutPkg.name}!`, "success");
+            setCheckoutPkg(null); setAppliedCoupon(null); setConfirmForm({senderName:'', senderBank:'', notes:''});
+        } catch(err) { showToast("Gagal memproses paket gratis.", "error"); }
+        isProcessingAction.current = false;
+        return;
+    }
+
+    if (!confirmForm.senderName || !confirmForm.senderBank) return showToast("Form konfirmasi transfer harus lengkap!", "error");
+    
     isProcessingAction.current = true;
     try {
       const transId = `TRX-${Math.floor(Date.now() / 1000)}`;
-      const basePrice = TIER_LEVELS[checkoutPkg.level]?.price || 0;
-      const discountVal = appliedCoupon && appliedCoupon.active ? appliedCoupon.discount : 0;
-      const trueFinalPrice = basePrice - (basePrice * discountVal / 100);
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transId), { id: transId, userId: user.uid, userName: userData?.name || user?.email || 'Member', packageLevel: checkoutPkg.level, packageName: checkoutPkg.name, price: trueFinalPrice, promoCode: appliedCoupon?.code || null, senderName: escapeInput(confirmForm.senderName), senderBank: escapeInput(confirmForm.senderBank), notes: escapeInput(confirmForm.notes), status: 'pending', createdAt: new Date().toISOString() });
       logActivity(`${userData?.name?.split(' ')[0] || 'Seseorang'} memesan lisensi ${checkoutPkg.name}! 🔥`, 'order');
       openWhatsAppConfirmation({name: checkoutPkg.name, price: trueFinalPrice});
@@ -627,7 +644,6 @@ export default function App() {
           // PENYEMPURNAAN: Hitung Komisi Afiliasi berdasarkan Tier Referrer!
           const target = allUsers.find(u => u.uid === trans.userId);
           if (target && target.referredBy) {
-              // Ambil tier si pemberi referal dari Registry
               const referrerData = allUsers.find(u => u.uid === target.referredBy);
               const refTier = referrerData?.subscriptionLevel || 0;
               const commRate = TIER_LEVELS[refTier]?.comm || 0.10;
@@ -1129,7 +1145,7 @@ export default function App() {
               <NavBtn active={activeTab==='landingpage'} onClick={()=>{setActiveTab('landingpage'); closeSidebarMobile();}} icon={<LayoutTemplate size={20} />} label="Web Replikator Pribadi" />
               <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20} />} label="Penarikan Komisi" />
               <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20} />} label="Peringkat Marketer" />
-              <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20} />} label="Upgrade Lisensi" />
+              <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20} />} label="Kelola Lisensi (Upgrade/Downgrade)" />
               <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20} />} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
               <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20} />} label="Tiket Bantuan" />
             </>
@@ -1638,26 +1654,37 @@ export default function App() {
           )}
 
           {/* ==================================================== */}
-          {/* TAB: SHOP / UPGRADE */}
+          {/* TAB: SHOP / UPGRADE / DOWNGRADE LISENSI */}
           {/* ==================================================== */}
           {activeTab === 'shop' && !isAdmin && (
              <div className="animate-fadeIn space-y-12">
-               <div className="text-center max-w-2xl mx-auto space-y-4 px-4"><span className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase">Pricing Plan</span><h2 className="text-4xl font-black text-slate-900 font-['Outfit']">Pilih Paket Terbaik</h2></div>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                 {[1, 2, 3, 4].map(lv => {
+               <div className="text-center max-w-2xl mx-auto space-y-4 px-4"><span className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase">Pricing Plan</span><h2 className="text-4xl font-black text-slate-900 font-['Outfit']">Kelola Paket & Lisensi</h2></div>
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                 {[0, 1, 2, 3, 4].map(lv => {
                    const isActive = currentTier === lv; 
-                   const isPassed = currentTier > lv; 
-                   const isPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
+                   const isUpgrade = currentTier < lv;
+                   const isDowngrade = currentTier > lv;
+                   const hasPendingAny = transactions.some(t => t.userId === user?.uid && t.status === 'pending');
+                   const isThisPending = transactions.some(t => t.userId === user?.uid && t.packageLevel === lv && t.status === 'pending');
                    const isVIP = lv === 4;
 
+                   let btnText = "PILIH PAKET";
+                   if (isActive) btnText = "AKTIF SAAT INI";
+                   else if (isThisPending) btnText = "MENUNGGU VALIDASI";
+                   else if (hasPendingAny) btnText = "TUNGGU VALIDASI LAIN";
+                   else if (isUpgrade) btnText = "UPGRADE KE SINI";
+                   else if (isDowngrade) btnText = "DOWNGRADE KE SINI";
+
                    return (
-                     <div key={lv} className={`bg-white rounded-[2rem] border-2 p-8 flex flex-col h-full transition-all relative ${isVIP ? 'border-amber-400 shadow-[0_20px_50px_rgba(251,191,36,0.2)] scale-[1.02]' : isActive ? 'border-indigo-600 shadow-2xl' : 'border-slate-100 hover:border-slate-300 shadow-xl'}`}>
-                        {isVIP && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-400 to-orange-500 text-white px-4 py-1 rounded-full text-[10px] font-black tracking-widest flex items-center gap-1 shadow-lg"><Crown size={12}/> BEST VALUE</div>}
-                        <h3 className={`text-2xl font-black mb-2 uppercase ${isVIP ? 'text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-rose-500' : 'text-slate-900'}`}>{TIER_LEVELS[lv].name}</h3>
-                        <p className="text-xs text-slate-500 mb-6 min-h-[40px] font-medium">{TIER_LEVELS[lv].desc}</p>
-                        <span className={`text-3xl font-black mb-8 ${isVIP ? 'text-rose-600' : 'text-indigo-600'}`}>Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
-                        <ul className="space-y-4 mb-8 flex-1">{TIER_LEVELS[lv].features.map((f, i) => (<li key={i} className="flex items-start gap-3"><CheckCircle2 size={18} className={`${isVIP ? 'text-rose-500' : 'text-emerald-500'} shrink-0`} /><span className="text-sm font-medium text-slate-600">{f}</span></li>))}</ul>
-                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); window.scrollTo(0,0);}} disabled={isActive||isPassed||isPending} className={`w-full py-5 rounded-2xl font-black ${isActive||isPassed||isPending ? 'bg-slate-100 text-slate-400' : isVIP ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white hover:scale-105 shadow-lg' : 'bg-slate-900 text-white hover:bg-indigo-600'}`}>{isActive ? 'AKTIF SAAT INI' : isPassed ? 'TERLEWATI' : isPending ? 'MENUNGGU VALIDASI' : 'PILIH PAKET INI'}</button>
+                     <div key={lv} className={`bg-white rounded-[2rem] border-2 p-6 flex flex-col h-full transition-all relative ${isVIP ? 'border-amber-400 shadow-[0_20px_50px_rgba(251,191,36,0.2)] scale-[1.02] z-10' : isActive ? 'border-emerald-500 shadow-2xl scale-[1.02] z-10' : 'border-slate-100 hover:border-slate-300 shadow-xl'}`}>
+                        {isActive && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-white px-3 py-1 rounded-full text-[9px] font-black tracking-widest flex items-center gap-1 shadow-md whitespace-nowrap"><CheckCircle2 size={12}/> PAKET AKTIF</div>}
+                        {!isActive && isVIP && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-400 to-orange-500 text-white px-3 py-1 rounded-full text-[9px] font-black tracking-widest flex items-center gap-1 shadow-md whitespace-nowrap"><Crown size={12}/> BEST VALUE</div>}
+                        
+                        <h3 className={`text-xl font-black mb-1 uppercase ${isVIP ? 'text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-rose-500' : 'text-slate-900'}`}>{TIER_LEVELS[lv].name}</h3>
+                        <p className="text-[11px] text-slate-500 mb-4 min-h-[34px] font-medium leading-tight">{TIER_LEVELS[lv].desc}</p>
+                        <span className={`text-2xl font-black mb-6 ${isVIP ? 'text-rose-600' : isActive ? 'text-emerald-600' : 'text-indigo-600'}`}>Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
+                        <ul className="space-y-3 mb-6 flex-1">{TIER_LEVELS[lv].features.map((f, i) => (<li key={i} className="flex items-start gap-2"><CheckCircle2 size={16} className={`${isVIP ? 'text-rose-500' : isActive ? 'text-emerald-500' : 'text-indigo-500'} shrink-0`} /><span className="text-[13px] font-medium text-slate-600 leading-tight">{f}</span></li>))}</ul>
+                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); window.scrollTo(0,0);}} disabled={isActive||hasPendingAny} className={`w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest ${isActive||hasPendingAny ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : isVIP ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white hover:scale-105 shadow-lg' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-md transition-transform hover:-translate-y-1'}`}>{btnText}</button>
                      </div>
                    )
                  })}
@@ -1670,7 +1697,7 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'transactions' && !isAdmin && (
             <div className="animate-fadeIn space-y-10">
-               <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Riwayat Pembelian</h2>
+               <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Riwayat Transaksi Lisensi</h2>
                <div className="grid grid-cols-1 gap-4">
                  {[...transactions].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(t => (
                     <div key={t.id} className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
@@ -2127,12 +2154,18 @@ export default function App() {
       {checkoutPkg && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-slate-900 bg-opacity-80 backdrop-blur-md animate-fadeIn overflow-y-auto">
            <div className="max-w-xl w-full bg-white rounded-[2.5rem] shadow-3xl my-auto p-8 sm:p-12 space-y-6">
-              <div className="flex justify-between items-center"><h3 className="text-2xl font-black">Final Checkout</h3><button onClick={()=>{setCheckoutPkg(null);}}><X /></button></div>
-              <div className="bg-slate-900 rounded-[1.5rem] p-6 text-white"><p className="text-[10px] font-black uppercase text-indigo-300">Total</p><p className="text-3xl font-black">Rp {finalPrice.toLocaleString('id-ID')}</p></div>
+              <div className="flex justify-between items-center"><h3 className="text-2xl font-black">{finalPrice > 0 ? 'Final Checkout' : 'Konfirmasi Paket'}</h3><button onClick={()=>{setCheckoutPkg(null);}}><X /></button></div>
+              <div className="bg-slate-900 rounded-[1.5rem] p-6 text-white"><p className="text-[10px] font-black uppercase text-indigo-300">Total Tagihan</p><p className="text-3xl font-black">Rp {finalPrice.toLocaleString('id-ID')}</p></div>
               <form onSubmit={handlePurchaseRequest} className="space-y-4">
-                 <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
-                 <input type="text" placeholder="Bank Asal" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
-                 <button type="submit" className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-emerald-600 transition-all uppercase tracking-widest text-xs">Konfirmasi Pembayaran</button>
+                 {finalPrice > 0 ? (
+                     <>
+                         <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
+                         <input type="text" placeholder="Bank Asal" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
+                         <button type="submit" disabled={isProcessingAction.current} className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-emerald-600 transition-all uppercase tracking-widest text-xs flex justify-center items-center gap-2">{isProcessingAction.current ? <Loader2 size={16} className="animate-spin" /> : null} Konfirmasi Pembayaran</button>
+                     </>
+                 ) : (
+                     <button type="submit" disabled={isProcessingAction.current} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs flex justify-center items-center gap-2">{isProcessingAction.current ? <Loader2 size={16} className="animate-spin" /> : null} Aktivasi Paket Sekarang</button>
+                 )}
               </form>
            </div>
         </div>
