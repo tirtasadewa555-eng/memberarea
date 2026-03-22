@@ -363,7 +363,6 @@ export default function App() {
       const checkIsAdmin = u?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
       setIsAdmin(checkIsAdmin);
       if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
-      if (u) setShowPublicSite(false);
       setLoading(false);
     });
     return () => unsubAuth();
@@ -1002,6 +1001,35 @@ export default function App() {
   // RENDER COMPONENTS
   // ==========================================
   
+  // LOGIKA HALAMAN PUBLIK / REFERRAL LINK (WEB REPLIKATOR)
+  if (!user && showPublicSite && publicSiteData) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 relative overflow-hidden font-['Plus_Jakarta_Sans']">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500 bg-opacity-20 rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-emerald-500 bg-opacity-20 rounded-full blur-[100px]"></div>
+        
+        <div className="max-w-2xl w-full bg-white rounded-[3rem] p-10 sm:p-14 text-center shadow-2xl relative z-10 animate-slideUp border border-slate-100">
+          <div className="w-24 h-24 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-xl shadow-indigo-200">
+            <Rocket size={48} className="text-white" />
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-black text-slate-900 mb-6 font-['Outfit'] leading-tight tracking-tight">
+            {publicSiteData.heroHeadline || 'Selamat Datang di ProSpace'}
+          </h1>
+          <p className="text-slate-500 text-lg sm:text-xl mb-12 leading-relaxed">
+            Anda telah diundang secara eksklusif oleh <strong className="text-indigo-600">{publicSiteData.ownerName || 'Member VIP'}</strong>. Bergabunglah sekarang untuk mendapatkan akses ke seluruh modul dan alat AI digital marketing.
+          </p>
+          <button 
+            onClick={() => setShowPublicSite(false)} 
+            className="w-full sm:w-auto bg-slate-900 text-white px-12 py-5 rounded-2xl font-black shadow-2xl hover:scale-105 transition-all text-sm tracking-widest uppercase hover:bg-indigo-600"
+          >
+            TERIMA UNDANGAN & GABUNG
+          </button>
+        </div>
+        <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
+      </div>
+    );
+  }
+
   // KOMPONEN UNTUK MENGUNCI FITUR YANG BELUM DIBELI
   const FeatureLockScreen = ({ title, reqTier, icon: Icon }) => (
     <div className="animate-fadeIn max-w-4xl mx-auto text-center space-y-8 py-20 px-6">
@@ -1064,7 +1092,7 @@ export default function App() {
   // ==========================================
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
-  if (!user && !showPublicSite) return (
+  if (!user) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] relative overflow-hidden">
       {toast.show && <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[300] px-6 py-3 rounded-2xl font-black text-sm shadow-2xl animate-slideUp border ${toast.type === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>{toast.msg}</div>}
       <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 border border-slate-100 animate-fadeIn relative z-10">
