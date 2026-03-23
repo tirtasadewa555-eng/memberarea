@@ -159,6 +159,8 @@ export default function App() {
     apiKey: '',           // Legacy / fallback key
     textApiKey: '',       // API Key untuk fitur Text (AI Chat, Copilot, Quiz)
     imageApiKey: '',      // API Key untuk fitur Image (Ajaib Foto)
+    textModel: 'gemini-2.0-flash',
+    imageModel: 'gemini-2.0-flash-exp-image-generation',
     isActive: true 
   });
   const [isTestingApi, setIsTestingApi] = useState(false);
@@ -310,25 +312,25 @@ export default function App() {
       let keyToUse = "";
       if (!forceInternalKey) {
           if (type === 'text') {
-              // Prioritas: textApiKey > apiKey (legacy)
               keyToUse = (aiConfig.textApiKey && aiConfig.textApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
           } else if (type === 'image_edit' || type === 'image_gen') {
-              // Prioritas: imageApiKey > apiKey (legacy)
               keyToUse = (aiConfig.imageApiKey && aiConfig.imageApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
           }
       }
       const hasCustomKey = keyToUse !== "";
       
+      // Tentukan model berdasarkan tipe dan ketersediaan custom model di config
+      const TEXT_MODEL = aiConfig.textModel || "gemini-2.0-flash";
+      const IMAGE_MODEL = aiConfig.imageModel || "gemini-2.0-flash-exp-image-generation";
+      
       let apiUrl = "";
+      let modelName = "";
       if (type === 'text') {
-          // Model untuk Text: AI Chat, Copilot, Quiz
-          const modelName = "gemini-2.0-flash";
-          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
+          modelName = TEXT_MODEL;
       } else if (type === 'image_edit' || type === 'image_gen') {
-          // Model untuk Image: Ajaib Foto (edit & generate)
-          const modelName = "gemini-2.0-flash-exp-image-generation";
-          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
+          modelName = IMAGE_MODEL;
       }
+      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       
       const res = await fetchWithRetry(apiUrl, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -1080,21 +1082,21 @@ export default function App() {
   const textKey = (aiConfig.textApiKey && aiConfig.textApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
   if (textKey) {
     try {
-      await fetchFromAI("Say 'Text API OK'");
-      results.push("Text: OK");
-    } catch(e) { results.push(`Text: Gagal - ${e.message}`); }
+      await fetchFromAI("Respond with exactly: OK");
+      results.push(`Text (${aiConfig.textModel || 'gemini-2.0-flash'}): OK`);
+    } catch(e) { results.push(`Text: GAGAL`); }
   } else {
     results.push("Text: Tidak ada key");
   }
   
-  // Test Image API Key  
+  // Test Image API Key - gunakan prompt text sederhana (tanpa generate gambar)
   const imageKey = (aiConfig.imageApiKey && aiConfig.imageApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
   if (imageKey) {
     try {
-      const testPayload = { contents: [{ parts: [{ text: "Say 'Image API OK'" }] }] };
+      const testPayload = { contents: [{ parts: [{ text: "Respond with exactly: OK" }] }] };
       await callGeminiAPI(testPayload, 'image_gen');
-      results.push("Image: OK");
-    } catch(e) { results.push(`Image: Gagal - ${e.message}`); }
+      results.push(`Image (${aiConfig.imageModel || 'gemini-2.0-flash-exp-image-generation'}): OK`);
+    } catch(e) { results.push(`Image: GAGAL`); }
   } else {
     results.push("Image: Tidak ada key");
   }
@@ -2258,22 +2260,37 @@ export default function App() {
                       </div>
 
                       <div className="space-y-4 p-4 bg-slate-50 rounded-xl border">
-                        <h4 className="font-black text-slate-700 text-sm">API Key per Fitur</h4>
+                        <h4 className="font-black text-slate-700 text-sm">Pengaturan per Fitur</h4>
                         
-                        <div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase flex justify-between">
-                            <span>API Key - Text (AI Chat, Copilot, Quiz)</span>
-                            <span className="text-emerald-600">Model: gemini-2.0-flash</span>
-                          </label>
-                          <input type="password" value={aiConfig.textApiKey || ''} onChange={e=>setAiConfig({...aiConfig, textApiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-white text-sm" placeholder="AIzaSy... (Khusus fitur Text)" />
+                        <div className="p-3 bg-white rounded-lg border space-y-3">
+                          <p className="text-xs font-black text-emerald-700 uppercase">Fitur Text (AI Chat, Copilot, Quiz)</p>
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Model AI Text</label>
+                            <select className="w-full p-3 border rounded-xl font-bold bg-slate-50 text-sm" value={aiConfig.textModel || 'gemini-2.0-flash'} onChange={e=>setAiConfig({...aiConfig, textModel: e.target.value})}>
+                              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stabil & Cepat)</option>
+                              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Lebih Pintar)</option>
+                              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Paling Pintar)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">API Key Text</label>
+                            <input type="password" value={aiConfig.textApiKey || ''} onChange={e=>setAiConfig({...aiConfig, textApiKey: e.target.value})} className="w-full p-3 border rounded-xl font-bold bg-slate-50 text-sm" placeholder="AIzaSy... (Khusus fitur Text)" />
+                          </div>
                         </div>
                         
-                        <div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase flex justify-between">
-                            <span>API Key - Image (Ajaib Foto)</span>
-                            <span className="text-purple-600">Model: gemini-2.0-flash-exp-image-generation</span>
-                          </label>
-                          <input type="password" value={aiConfig.imageApiKey || ''} onChange={e=>setAiConfig({...aiConfig, imageApiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-white text-sm" placeholder="AIzaSy... (Khusus fitur Image)" />
+                        <div className="p-3 bg-white rounded-lg border space-y-3">
+                          <p className="text-xs font-black text-purple-700 uppercase">Fitur Image (Ajaib Foto)</p>
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Model AI Image</label>
+                            <select className="w-full p-3 border rounded-xl font-bold bg-slate-50 text-sm" value={aiConfig.imageModel || 'gemini-2.0-flash-exp-image-generation'} onChange={e=>setAiConfig({...aiConfig, imageModel: e.target.value})}>
+                              <option value="gemini-2.0-flash-exp-image-generation">Gemini 2.0 Flash Image (Default)</option>
+                              <option value="gemini-2.5-flash-preview-image-generation">Gemini 2.5 Flash Image Preview</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">API Key Image</label>
+                            <input type="password" value={aiConfig.imageApiKey || ''} onChange={e=>setAiConfig({...aiConfig, imageApiKey: e.target.value})} className="w-full p-3 border rounded-xl font-bold bg-slate-50 text-sm" placeholder="AIzaSy... (Khusus fitur Image)" />
+                          </div>
                         </div>
                       </div>
 
