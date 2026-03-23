@@ -17,7 +17,8 @@ import {
   Award, Sparkles, Crown, Gift, DownloadCloud, Bot, Zap,
   Headphones, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
   HelpCircle, CheckCircle2, Rocket, Wand2, Image as ImageIcon, 
-  Cpu, Globe, LayoutTemplate, Timer, MonitorPlay, Upload, Paintbrush, Wrench, Camera, Layers, User, Loader2
+  Cpu, Globe, LayoutTemplate, Timer, MonitorPlay, Upload, Paintbrush, Wrench, Camera, Layers, User, Loader2,
+  Send, CheckCircle // FIX: Ditambahkan icon yang hilang agar tidak crash
 } from 'lucide-react';
 
 // ==========================================
@@ -26,7 +27,7 @@ import {
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
-    apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
+    apiKey: "dummy", // Fallback aman
     authDomain: "memberarea-websiteku.firebaseapp.com",
     projectId: "memberarea-websiteku",
     storageBucket: "memberarea-websiteku.firebasestorage.app",
@@ -355,14 +356,20 @@ export default function App() {
 
     const initAuth = async () => { 
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } 
+      else { try { await signInAnonymously(auth); } catch(e) {} }
     };
     initAuth();
     
     const unsubAuth = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      const checkIsAdmin = u && u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-      setIsAdmin(checkIsAdmin);
-      if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
+      if(u && !u.isAnonymous) {
+          setUser(u);
+          const checkIsAdmin = u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+          setIsAdmin(checkIsAdmin);
+          if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
+      } else {
+          setUser(null);
+          setIsAdmin(false);
+      }
       setLoading(false);
     });
     return () => unsubAuth();
@@ -600,7 +607,7 @@ export default function App() {
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', cred.user.uid), init);
         localStorage.removeItem('affiliate_ref_v14'); logActivity(`${escapeInput(formData.name)} baru saja bergabung! 👋`, 'join'); showToast("Registrasi Berhasil!");
       } else { await signInWithEmailAndPassword(auth, safeEmail, formData.password); showToast("Selamat Datang!"); }
-    } catch (err) { showToast("Gagal masuk/daftar.", "error"); }
+    } catch (err) { showToast("Gagal masuk/daftar. Cek kredensial Anda.", "error"); }
     setAuthLoading(false); isProcessingAction.current = false;
   };
 
@@ -635,7 +642,7 @@ export default function App() {
       logActivity(`${userFirstName} memesan lisensi ${checkoutPkg.name}! 🔥`, 'order');
       openWhatsAppConfirmation({name: checkoutPkg.name, price: trueFinalPrice});
       setCheckoutPkg(null); setAppliedCoupon(null); setConfirmForm({senderName:'', senderBank:'', notes:''}); showToast("Konfirmasi terkirim!"); setActiveTab('transactions');
-    } catch (err) {}
+    } catch (err) { showToast("Gagal memproses transaksi.", "error"); }
     isProcessingAction.current = false;
   };
 
@@ -662,7 +669,7 @@ export default function App() {
           }
           showToast("Member di-upgrade dan fitur langsung terbuka!");
       } else { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', trans.id), { status: 'rejected' }); showToast("Ditolak", "error"); }
-    } catch (err) {}
+    } catch (err) { showToast("Terjadi kesalahan sistem.", "error");}
     isProcessingAction.current = false;
   };
 
@@ -1723,7 +1730,7 @@ export default function App() {
                         <p className="text-[11px] text-slate-500 mb-4 min-h-[34px] font-medium leading-tight">{TIER_LEVELS[lv].desc}</p>
                         <span className={`text-2xl font-black mb-6 ${isVIP ? 'text-rose-600' : isActive ? 'text-emerald-600' : 'text-indigo-600'}`}>Rp {TIER_LEVELS[lv].price.toLocaleString('id-ID')}</span>
                         <ul className="space-y-3 mb-6 flex-1">{TIER_LEVELS[lv].features.map((f, i) => (<li key={i} className="flex items-start gap-2"><CheckCircle2 size={16} className={`${isVIP ? 'text-rose-500' : isActive ? 'text-emerald-500' : 'text-indigo-500'} shrink-0`} /><span className="text-[13px] font-medium text-slate-600 leading-tight">{f}</span></li>))}</ul>
-                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); window.scrollTo(0,0);}} disabled={isActive||hasPendingAny} className={`w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest ${isActive||hasPendingAny ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : isVIP ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white hover:scale-105 shadow-lg' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-md transition-transform hover:-translate-y-1'}`}>{btnText}</button>
+                        <button onClick={() => {setCheckoutPkg({...TIER_LEVELS[lv], level: lv}); setAppliedCoupon(null); setCouponInput(''); window.scrollTo(0,0);}} disabled={isActive||hasPendingAny} className={`w-full py-4 rounded-xl font-black text-[11px] uppercase tracking-widest ${isActive||hasPendingAny ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : isVIP ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white hover:scale-105 shadow-lg' : 'bg-slate-900 text-white hover:bg-indigo-600 shadow-md transition-transform hover:-translate-y-1'}`}>{btnText}</button>
                      </div>
                    )
                  })}
@@ -1837,7 +1844,7 @@ export default function App() {
                           {transactions.filter(t => t.status==='pending').map(t => (
                             <tr key={t.id}>
                                <td className="px-8 py-6"><p className="font-black text-slate-900 text-sm">{t.userName}</p><p className="text-[10px] text-slate-400 font-mono">{t.id}</p></td>
-                               <td className="px-8 py-6"><div className="bg-slate-100 p-3 rounded-xl text-xs font-bold"><p>Pengirim: {t.senderName}</p><p>Bank: {t.senderBank}</p></div></td>
+                               <td className="px-8 py-6"><div className="bg-slate-100 p-3 rounded-xl text-xs font-bold"><p>Pengirim: {t.senderName}</p><p>Bank: {t.senderBank}</p>{t.notes && <p className="mt-1 italic font-medium text-slate-500">Catatan: {t.notes}</p>}</div></td>
                                <td className="px-8 py-6 font-black text-indigo-600">Rp {t.price.toLocaleString('id-ID')}</td>
                                <td className="px-8 py-6 text-center">
                                   <div className="flex justify-center gap-2">
@@ -2194,12 +2201,31 @@ export default function App() {
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-slate-900 bg-opacity-80 backdrop-blur-md animate-fadeIn overflow-y-auto">
            <div className="max-w-xl w-full bg-white rounded-[2.5rem] shadow-3xl my-auto p-8 sm:p-12 space-y-6">
               <div className="flex justify-between items-center"><h3 className="text-2xl font-black">{finalPrice > 0 ? 'Final Checkout' : 'Konfirmasi Paket'}</h3><button onClick={()=>{setCheckoutPkg(null);}}><X /></button></div>
+              
+              {/* FITUR: Form Input Kupon (FIXED - Sebelumnya Terpotong) */}
+              {finalPrice > 0 && (
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                      <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Punya Kode Kupon?</p>
+                      <div className="flex gap-2">
+                          <input type="text" placeholder="Kode Promo" value={couponInput} onChange={e=>setCouponInput(e.target.value.toUpperCase())} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 font-bold text-sm uppercase outline-none focus:ring-2 focus:ring-indigo-500" />
+                          <button type="button" onClick={() => {
+                              const found = coupons.find(c => c.code === couponInput);
+                              if(found && found.active) { setAppliedCoupon(found); showToast("Kupon berhasil diterapkan!", "success"); }
+                              else { showToast("Kupon tidak valid / tidak aktif", "error"); setAppliedCoupon(null); }
+                          }} className="bg-slate-900 text-white px-4 py-3 rounded-xl text-xs font-black hover:bg-indigo-600 transition-colors">APPLY</button>
+                      </div>
+                      {appliedCoupon && <p className="text-emerald-600 text-xs font-bold mt-2 flex items-center gap-1"><CheckCircle2 size={14}/> Diskon {appliedCoupon.discount}% diterapkan!</p>}
+                  </div>
+              )}
+
               <div className="bg-slate-900 rounded-[1.5rem] p-6 text-white"><p className="text-[10px] font-black uppercase text-indigo-300">Total Tagihan</p><p className="text-3xl font-black">Rp {finalPrice.toLocaleString('id-ID')}</p></div>
               <form onSubmit={handlePurchaseRequest} className="space-y-4">
                  {finalPrice > 0 ? (
                      <>
-                         <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
-                         <input type="text" placeholder="Bank Asal" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm" required />
+                         <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500" required />
+                         <input type="text" placeholder="Bank Asal (Contoh: BCA, Mandiri)" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500" required />
+                         {/* FIX: Input Notes ditambahkan agar variable confirmForm.notes tidak error */}
+                         <input type="text" placeholder="Catatan Tambahan (Opsional)" value={confirmForm.notes} onChange={e=>setConfirmForm({...confirmForm, notes: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                          <button type="submit" disabled={isProcessingAction.current} className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-emerald-600 transition-all uppercase tracking-widest text-xs flex justify-center items-center gap-2">{isProcessingAction.current ? <Loader2 size={16} className="animate-spin" /> : null} Konfirmasi Pembayaran</button>
                      </>
                  ) : (
