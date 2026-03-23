@@ -18,7 +18,7 @@ import {
   Headphones, RefreshCw, BookOpen, GraduationCap, PlaySquare, 
   HelpCircle, CheckCircle2, Rocket, Wand2, Image as ImageIcon, 
   Cpu, Globe, LayoutTemplate, Timer, MonitorPlay, Upload, Paintbrush, Wrench, Camera, Layers, User, Loader2,
-  Send, CheckCircle // FIX: Ditambahkan icon yang hilang agar tidak crash
+  Send, CheckCircle
 } from 'lucide-react';
 
 // ==========================================
@@ -28,12 +28,12 @@ const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
     apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
-  authDomain: "memberarea-websiteku.firebaseapp.com",
-  projectId: "memberarea-websiteku",
-  storageBucket: "memberarea-websiteku.firebasestorage.app",
-  messagingSenderId: "9418923099",
-  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-  measurementId: "G-RQBKYLD4K5"
+    authDomain: "memberarea-websiteku.firebaseapp.com",
+    projectId: "memberarea-websiteku",
+    storageBucket: "memberarea-websiteku.firebasestorage.app",
+    messagingSenderId: "9418923099",
+    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+    measurementId: "G-RQBKYLD4K5"
   };
 };
 
@@ -283,35 +283,45 @@ export default function App() {
   };
 
   // ==========================================
-  // LOGIC: API NETWORK (WITH RETRY & FALLBACK)
+  // LOGIC: API NETWORK (PERFECTED FOR GEMINI FREE TIER)
   // ==========================================
-  const fetchWithRetry = async (url, options, maxRetries = 3) => {
-    let delay = 1000;
+  const fetchWithRetry = async (url, options, maxRetries = 4) => {
+    let delay = 1500; // Mulai dengan delay 1.5 detik untuk mitigasi limit
     for (let i = 0; i < maxRetries; i++) {
       try {
         const response = await fetch(url, options);
+        // Jika sukses atau error yang bukan karena server/rate limit
         if (response.ok || [400, 401, 403, 404].includes(response.status)) return response;
-      } catch (err) { if (i === maxRetries - 1) throw err; }
+        
+        // Tangkap error 429 (Too Many Requests - Sering terjadi di Free Tier)
+        if (response.status === 429) {
+          console.warn(`Rate Limit Gemini API tercapai. Mencoba lagi dalam ${delay}ms...`);
+        }
+      } catch (err) { 
+        if (i === maxRetries - 1) throw err; 
+      }
+      // Exponential backoff untuk mengatasi limit 15 RPM Free Tier
       await new Promise(resolve => setTimeout(resolve, delay));
       delay *= 2; 
     }
-    throw new Error("Maksimal percobaan koneksi tercapai. Server AI sedang sibuk.");
+    throw new Error("Server AI sedang sibuk (Rate Limit). Silakan coba beberapa saat lagi.");
   };
 
   const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
-      const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
-      const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
+      const keyToUse = aiConfig.apiKey ? aiConfig.apiKey.trim() : "";
+      
+      if (!keyToUse) {
+          throw new Error("API Key Gemini belum diatur. Masuk sebagai Admin ke menu Pengaturan API & AI.");
+      }
       
       let url = "";
-      if (type === 'text') {
-          // FIX CERDAS: Gunakan gemini-flash-latest untuk Custom Key
-          // Ini sangat kompatibel secara global untuk Text maupun Vision (membaca gambar)
-          const modelName = hasCustomKey ? "gemini-flash-latest" : "gemini-2.5-flash-preview-09-2025";
-          url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
-      } else if (type === 'image_edit') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
-      } else if (type === 'image_gen') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
+      // FIX: Gunakan gemini-2.0-flash (Paling stabil untuk Text & Vision di Free Tier)
+      if (type === 'text' || type === 'vision') {
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${keyToUse}`;
+      } else if (type === 'image_gen' || type === 'image_edit') {
+          // KHUSUS FREE TIER: Google API Key standar tidak punya akses ke Imagen model.
+          // Kita akan force trigger Error agar sistem langsung lari ke Seamless Fallback (Pollinations).
+          throw new Error("IMAGE_MODEL_RESTRICTED"); 
       }
       
       const res = await fetchWithRetry(url, {
@@ -321,26 +331,6 @@ export default function App() {
       if (!res.ok) {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
-          
-          // FIX PALING CERDAS: Strategi Multi-Layer Fallback Khusus Model Gambar
-          if (['image_edit', 'image_gen'].includes(type)) {
-              if (hasCustomKey && (res.status === 404 || res.status === 403)) {
-                  // Layer 1: Coba gunakan koneksi Internal Canvas sejenak (Jika user sebenarnya ada di dalam Canvas tapi mengisi API Key)
-                  console.warn("Custom Key tidak di-whitelist untuk model gambar. Mencoba Internal Canvas...");
-                  try {
-                      return await callGeminiAPI(payload, type, true); 
-                  } catch (internalErr) {
-                      throw new Error("IMAGE_MODEL_RESTRICTED"); // Gagal total, lanjut ke fallback eksternal
-                  }
-              } else if (!hasCustomKey && res.status === 403) {
-                  throw new Error("IMAGE_MODEL_RESTRICTED");
-              }
-          }
-
-          if (res.status === 403 && !hasCustomKey && type === 'text') {
-              errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
-          }
-          
           throw new Error(errorMsg);
       }
       return await res.json();
@@ -348,7 +338,9 @@ export default function App() {
 
   const fetchFromAI = async (promptText, jsonMode = false) => {
       const payload = { contents: [{ parts: [{ text: promptText }] }] };
-      if (jsonMode) payload.generationConfig = { responseMimeType: "application/json" };
+      if (jsonMode) {
+          payload.generationConfig = { responseMimeType: "application/json" };
+      }
       const data = await callGeminiAPI(payload, 'text');
       return data.candidates[0].content.parts[0].text;
   };
@@ -551,99 +543,72 @@ export default function App() {
     if (activePhotoFeature === 'gabung' && photoImages.length < 2) return showToast("Minimal 2 gambar.", "error");
     if (!photoInstruction.trim()) return showToast("Tulis instruksi.", "error");
 
-    setIsGeneratingPhoto(true); setPhotoResult(null); setPhotoGenStatus('Menganalisis gambar dengan AI Visi...');
+    setIsGeneratingPhoto(true); setPhotoResult(null); setPhotoGenStatus('Menganalisis prompt dengan Gemini AI...');
 
     try {
-      let textPrompt = `Act as an Expert Prompt Engineer. Instruction: "${photoInstruction}". `;
-      if (activePhotoFeature === 'gabung') textPrompt += `Write a prompt to seamlessly merge these uploaded images.`;
-      else if (activePhotoFeature === 'photoshoot') textPrompt += `Write a prompt for a high-end product photoshoot placing this exact product into the scenario.`;
-      else if (activePhotoFeature === 'model') textPrompt += `Write a prompt for a hyper-realistic 8k portrait of a human model.`;
-      else if (activePhotoFeature === 'edit') textPrompt += `Identify the mentioned objects and write a prompt to edit this image exactly as instructed while keeping the rest identical.`;
-      else if (activePhotoFeature === 'perbaiki') textPrompt += `Write a prompt to flawlessly restore, upscale, and modernize this damaged/old photo into DSLR quality.`;
-      else if (activePhotoFeature === 'banner') textPrompt += `Write a prompt to create a high-converting commercial banner featuring this subject, leaving space for text.`;
-      else if (activePhotoFeature === 'ucapan') textPrompt += `Write a prompt to create a beautiful festive greeting card featuring this subject.`;
-      textPrompt += ` Output ONLY the prompt text in English.`;
+      // 1. OLAHKAN PROMPT DENGAN GEMINI TEXT (Free Tier Sangat Cepat untuk ini)
+      let textPrompt = `Act as an Expert Midjourney/DALL-E Prompt Engineer. Rewrite this instruction into a highly detailed, professional english image generation prompt: "${photoInstruction}". `;
+      if (activePhotoFeature === 'gabung') textPrompt += `Make sure the prompt describes merging the core subjects of the uploaded concept.`;
+      else if (activePhotoFeature === 'photoshoot') textPrompt += `Make it a high-end product photoshoot prompt.`;
+      else if (activePhotoFeature === 'model') textPrompt += `Make it a hyper-realistic 8k portrait prompt.`;
+      else if (activePhotoFeature === 'perbaiki') textPrompt += `Make it a prompt describing a perfectly restored, 8k DSLR quality image of the subject.`;
+      else if (activePhotoFeature === 'banner') textPrompt += `Make it a prompt for a high-converting commercial banner.`;
+      textPrompt += ` Output ONLY the final english prompt text. No explanations.`;
 
-      const textParts = [{ text: textPrompt }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-      const textData = await callGeminiAPI({ contents: [{ role: "user", parts: textParts }] }, 'text');
-      const superPrompt = textData.candidates?.[0]?.content?.parts?.[0]?.text || photoInstruction;
+      let superPrompt = photoInstruction; // Default jika gagal
+
+      try {
+          const textParts = [{ text: textPrompt }];
+          if (photoImages.length > 0) {
+              // Jika ada gambar, gunakan kapabilitas Vision Gemini Flash
+              textParts.push(...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } })));
+          }
+          const textData = await callGeminiAPI({ contents: [{ role: "user", parts: textParts }] }, 'vision');
+          superPrompt = textData.candidates?.[0]?.content?.parts?.[0]?.text || photoInstruction;
+      } catch (promptErr) {
+          console.warn("Gagal enhace prompt dengan Gemini, menggunakan prompt asli.", promptErr);
+      }
       
-      setPhotoGenStatus('Merender piksel mahakarya AI...');
+      setPhotoGenStatus('Memproses rendering gambar (Seamless Server)...');
 
-      let imgInst = "";
-      if (activePhotoFeature === 'gabung') imgInst = `Merge images exactly: ${superPrompt}`;
-      else if (activePhotoFeature === 'photoshoot') imgInst = `Create product photoshoot: ${superPrompt}. Keep product identity intact.`;
-      else if (activePhotoFeature === 'model') imgInst = `Generate hyper-realistic photo: ${superPrompt}.`;
-      else if (activePhotoFeature === 'edit') imgInst = `Edit image exactly: ${superPrompt}. Keep unmentioned parts intact.`;
-      else if (activePhotoFeature === 'perbaiki') imgInst = `Restore and enhance: ${superPrompt}. Upgrade quality to DSLR.`;
-      else if (activePhotoFeature === 'banner') imgInst = `Create advertisement banner: ${superPrompt}. Preserve core identity.`;
-      else if (activePhotoFeature === 'ucapan') imgInst = `Create greeting card: ${superPrompt}. Preserve face identity.`;
-
-      // GENIUS FIX: Dynamic Model Routing & External API Fallback
-      const isTextToImage = photoImages.length === 0;
+      // 2. GENERATE GAMBAR (MENGGUNAKAN SEAMLESS FALLBACK POLLINATIONS)
+      // Karena Free Tier API Key Gemini tidak bisa Imagen 4, kita bypass dan langsung ke solusi gratis tanpa batas.
+      const randomSeed = Math.floor(Math.random() * 1000000);
+      let imgInst = encodeURIComponent(superPrompt.substring(0, 800)); // Limit karakter
+      
+      let finalImageUrl = `https://image.pollinations.ai/prompt/${imgInst}?seed=${randomSeed}&width=800&height=800&nologo=true`;
+      
+      // Ambil gambar dan jadikan Base64 agar bisa di-download dan di-save ke Firebase (CORS Bypass)
       let fullDataUrl = "";
-
-      if (isTextToImage) {
-          const payload = {
-              instances: { prompt: imgInst },
-              parameters: { sampleCount: 1 }
-          };
-          try {
-              const imgData = await callGeminiAPI(payload, 'image_gen');
-              const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-              if (!generatedBase64) throw new Error("Gagal merender gambar.");
-              fullDataUrl = `data:image/png;base64,${generatedBase64}`;
-          } catch (apiErr) {
-              if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
-                  // LAYER 2 FALLBACK (Paling Handal): Gunakan Public Image AI Server secara Seamless
-                  setPhotoGenStatus('Akses Google Image terbatas. Beralih ke Public AI Server (Seamless)...');
-                  const randomSeed = Math.floor(Math.random() * 1000000);
-                  fullDataUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgInst)}?seed=${randomSeed}&width=800&height=800&nologo=true`;
-                  
-                  // Coba fetch dan konversi ke Base64 agar riwayat gambar bisa di-save dan didownload dengan aman
-                  try {
-                      const imgRes = await fetch(fullDataUrl);
-                      const blob = await imgRes.blob();
-                      fullDataUrl = await new Promise((resolve) => {
-                          const reader = new FileReader();
-                          reader.onloadend = () => resolve(reader.result);
-                          reader.readAsDataURL(blob);
-                      });
-                  } catch(e) { console.warn("CORS issue fetching fallback image, using direct URL"); }
-              } else {
-                  throw apiErr;
-              }
-          }
-      } else {
-          const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-          const payload = { 
-              contents: [{ parts: imageParts }],
-              generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-          };
-          try {
-              const imgData = await callGeminiAPI(payload, 'image_edit');
-              const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-              if (!generatedBase64) throw new Error("Gagal merender gambar.");
-              fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
-          } catch (apiErr) {
-              if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
-                  throw new Error("API Key Anda valid untuk Chat, tapi akses Edit Gambar ditolak oleh Google. Kosongkan API Key di Pengaturan jika Anda menggunakan Canvas bawaan, atau gunakan fitur Text-to-Image.");
-              } else {
-                  throw apiErr;
-              }
-          }
+      try {
+          const imgRes = await fetch(finalImageUrl);
+          const blob = await imgRes.blob();
+          fullDataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+          });
+      } catch(e) { 
+          // Jika konversi base64 gagal karena CORS browser, pakai URL asli (fallback terakhir)
+          fullDataUrl = finalImageUrl; 
       }
 
       setPhotoResult(fullDataUrl);
       showToast("Sulap foto berhasil!", "success");
 
-      if (user) {
+      if (user && fullDataUrl.startsWith('data:')) {
         try {
           await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), { feature: activePhotoFeature, instruction: photoInstruction, resultImage: fullDataUrl, createdAt: serverTimestamp() });
           logActivity(`${userFirstName} membuat mahakarya di AI Studio Foto! 🎨`, 'learn');
-        } catch (e) {}
+        } catch (e) {
+          console.warn("Ukuran Base64 terlalu besar untuk Firestore, gambar tidak disimpan di history.");
+        }
       }
-    } catch (err) { showToast(err.message, "error"); } finally { setIsGeneratingPhoto(false); }
+    } catch (err) { 
+      showToast(err.message, "error"); 
+    } finally { 
+      setIsGeneratingPhoto(false); 
+    }
   };
 
   const deletePhotoHistory = async (id) => {
