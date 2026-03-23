@@ -27,13 +27,13 @@ import {
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
-    apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
-  authDomain: "memberarea-websiteku.firebaseapp.com",
-  projectId: "memberarea-websiteku",
-  storageBucket: "memberarea-websiteku.firebasestorage.app",
-  messagingSenderId: "9418923099",
-  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-  measurementId: "G-RQBKYLD4K5"
+    apiKey: "dummy", // Fallback aman
+    authDomain: "memberarea-websiteku.firebaseapp.com",
+    projectId: "memberarea-websiteku",
+    storageBucket: "memberarea-websiteku.firebasestorage.app",
+    messagingSenderId: "9418923099",
+    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+    measurementId: "G-RQBKYLD4K5"
   };
 };
 
@@ -298,15 +298,19 @@ export default function App() {
     throw new Error("Maksimal percobaan koneksi tercapai. Server AI sedang sibuk.");
   };
 
-  const callGeminiAPI = async (payload, type = 'text') => {
-      const hasCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
+  const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
+      const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
-      const modelName = type === 'text' 
-          ? (hasCustomKey ? "gemini-2.5-flash" : "gemini-2.5-flash-preview-09-2025") 
-          : "gemini-2.5-flash-image-preview";
-
-      let url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
+      let url = "";
+      if (type === 'text') {
+          const modelName = hasCustomKey ? "gemini-2.5-flash" : "gemini-2.5-flash-preview-09-2025";
+          url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
+      } else if (type === 'image_edit') {
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
+      } else if (type === 'image_gen') {
+          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
+      }
       
       const res = await fetchWithRetry(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -316,12 +320,16 @@ export default function App() {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
           
+          // GENIUS FIX: Stealth Fallback! 
+          // Jika API Key kustom tidak punya akses model Image Preview / Imagen (403/404),
+          // sistem otomatis beralih menggunakan server internal Canvas tanpa menimbulkan error!
+          if ((res.status === 404 || res.status === 403) && ['image_edit', 'image_gen'].includes(type) && hasCustomKey) {
+              console.warn("API Key kustom ditolak untuk model gambar. Melakukan Stealth-Fallback ke server internal...");
+              return callGeminiAPI(payload, type, true);
+          }
+          
           if (res.status === 403 && !hasCustomKey) {
               errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
-          } else if (res.status === 404 && type === 'image' && hasCustomKey) {
-              errorMsg = "API Key publik Anda tidak memiliki akses ke model Image Preview. Kosongkan API Key di menu Pengaturan agar menggunakan server internal Canvas.";
-          } else if (res.status === 404 && type === 'text' && hasCustomKey) {
-              errorMsg = "Model teks tidak ditemukan pada API Key Anda. Pastikan API Key valid atau kosongkan untuk menggunakan server internal.";
           }
           throw new Error(errorMsg);
       }
@@ -561,17 +569,34 @@ export default function App() {
       else if (activePhotoFeature === 'banner') imgInst = `Create advertisement banner: ${superPrompt}. Preserve core identity.`;
       else if (activePhotoFeature === 'ucapan') imgInst = `Create greeting card: ${superPrompt}. Preserve face identity.`;
 
-      const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-      
-      const imgData = await callGeminiAPI({ 
-          contents: [{ parts: imageParts }],
-          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-      }, 'image');
-      
-      const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-      if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider.");
+      // GENIUS FIX: Dynamic Model Routing
+      // Deteksi apakah user butuh Text-to-Image murni ATAU Image-to-Image
+      const isTextToImage = photoImages.length === 0;
+      let fullDataUrl = "";
 
-      const fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
+      if (isTextToImage) {
+          // Gunakan Imagen 4.0 untuk Text-to-Image (Tidak ada gambar input dari user)
+          const payload = {
+              instances: { prompt: imgInst },
+              parameters: { sampleCount: 1 }
+          };
+          const imgData = await callGeminiAPI(payload, 'image_gen');
+          const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
+          if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider (Imagen 4).");
+          fullDataUrl = `data:image/png;base64,${generatedBase64}`;
+      } else {
+          // Gunakan Flash Image Preview untuk Image-to-Image / Editing (Ada gambar input)
+          const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
+          const payload = { 
+              contents: [{ parts: imageParts }],
+              generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+          };
+          const imgData = await callGeminiAPI(payload, 'image_edit');
+          const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+          if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider (Flash Image).");
+          fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
+      }
+
       setPhotoResult(fullDataUrl);
       showToast("Sulap foto berhasil!", "success");
 
