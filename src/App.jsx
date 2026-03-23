@@ -27,13 +27,13 @@ import {
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
-    apiKey: "dummy", // Fallback aman
-    authDomain: "memberarea-websiteku.firebaseapp.com",
-    projectId: "memberarea-websiteku",
-    storageBucket: "memberarea-websiteku.firebasestorage.app",
-    messagingSenderId: "9418923099",
-    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-    measurementId: "G-RQBKYLD4K5"
+    apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
+  authDomain: "memberarea-websiteku.firebaseapp.com",
+  projectId: "memberarea-websiteku",
+  storageBucket: "memberarea-websiteku.firebasestorage.app",
+  messagingSenderId: "9418923099",
+  appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+  measurementId: "G-RQBKYLD4K5"
   };
 };
 
