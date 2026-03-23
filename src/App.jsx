@@ -154,7 +154,13 @@ export default function App() {
   const [copilotForm, setCopilotForm] = useState({ product: 'ProSpace VIP', platform: 'whatsapp', tone: 'fomo' });
   const [copilotResult, setCopilotResult] = useState('');
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
-  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
+  const [aiConfig, setAiConfig] = useState({ 
+    provider: 'gemini', 
+    apiKey: '',           // Legacy / fallback key
+    textApiKey: '',       // API Key untuk fitur Text (AI Chat, Copilot, Quiz)
+    imageApiKey: '',      // API Key untuk fitur Image (Ajaib Foto)
+    isActive: true 
+  });
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [aiQuiz, setAiQuiz] = useState(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
@@ -300,19 +306,28 @@ export default function App() {
   };
 
   const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
-      const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
-      const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
+      // Pilih API key berdasarkan tipe fitur
+      let keyToUse = "";
+      if (!forceInternalKey) {
+          if (type === 'text') {
+              // Prioritas: textApiKey > apiKey (legacy)
+              keyToUse = (aiConfig.textApiKey && aiConfig.textApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
+          } else if (type === 'image_edit' || type === 'image_gen') {
+              // Prioritas: imageApiKey > apiKey (legacy)
+              keyToUse = (aiConfig.imageApiKey && aiConfig.imageApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
+          }
+      }
+      const hasCustomKey = keyToUse !== "";
       
       let apiUrl = "";
       if (type === 'text') {
-          // Gunakan gemini-flash-latest untuk Custom Key
-          // Ini sangat kompatibel secara global untuk Text maupun Vision (membaca gambar)
-          const modelName = hasCustomKey ? "gemini-2.0-flash" : "gemini-2.0-flash";
+          // Model untuk Text: AI Chat, Copilot, Quiz
+          const modelName = "gemini-2.0-flash";
           apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
-      } else if (type === 'image_edit') {
-          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${keyToUse}`;
-      } else if (type === 'image_gen') {
-          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${keyToUse}`;
+      } else if (type === 'image_edit' || type === 'image_gen') {
+          // Model untuk Image: Ajaib Foto (edit & generate)
+          const modelName = "gemini-2.0-flash-exp-image-generation";
+          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       }
       
       const res = await fetchWithRetry(apiUrl, {
@@ -1057,12 +1072,35 @@ export default function App() {
   };
 
   const handleTestApiConnection = async () => {
-    setIsTestingApi(true);
+  setIsTestingApi(true);
+  const results = [];
+  
+  // Test Text API Key
+  const textKey = (aiConfig.textApiKey && aiConfig.textApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
+  if (textKey) {
     try {
-       await fetchFromAI("Say 'API Connect OK'");
-       showToast("Koneksi API Berhasil!", "success");
-    } catch(e) { showToast(`Koneksi Gagal: ${e.message}`, "error"); }
-    setIsTestingApi(false);
+      await fetchFromAI("Say 'Text API OK'");
+      results.push("Text: OK");
+    } catch(e) { results.push(`Text: Gagal - ${e.message}`); }
+  } else {
+    results.push("Text: Tidak ada key");
+  }
+  
+  // Test Image API Key  
+  const imageKey = (aiConfig.imageApiKey && aiConfig.imageApiKey.trim()) || (aiConfig.apiKey && aiConfig.apiKey.trim()) || "";
+  if (imageKey) {
+    try {
+      const testPayload = { contents: [{ parts: [{ text: "Say 'Image API OK'" }] }] };
+      await callGeminiAPI(testPayload, 'image_gen');
+      results.push("Image: OK");
+    } catch(e) { results.push(`Image: Gagal - ${e.message}`); }
+  } else {
+    results.push("Image: Tidak ada key");
+  }
+  
+  const allSuccess = results.every(r => r.includes("OK"));
+  showToast(results.join(" | "), allSuccess ? "success" : "error");
+  setIsTestingApi(false);
   };
 
   const closeSidebarMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
@@ -2213,7 +2251,39 @@ export default function App() {
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-xl">
                    <form onSubmit={handleSaveAiConfig} className="space-y-6">
                       <div><label className="text-[10px] font-black text-slate-400 uppercase">Provider AI (Wajib Gemini)</label><select className="w-full p-4 border rounded-xl font-bold bg-slate-50" value={aiConfig.provider} onChange={e=>setAiConfig({...aiConfig, provider: e.target.value})}><option value="gemini">Google Gemini AI</option></select></div>
-                      <div><label className="text-[10px] font-black text-slate-400 uppercase flex justify-between"><span>API Key Global (Kosongkan bila sistem Canvas berjalan)</span> <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Dapatkan Key Disini</a></label><input type="password" value={aiConfig.apiKey} onChange={e=>setAiConfig({...aiConfig, apiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-slate-50 text-sm" placeholder="AIzaSy... (Opsional)" /></div>
+                      
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                        <p className="text-xs font-bold text-amber-700">Pisahkan API Key untuk setiap fitur agar lebih terkontrol. Jika kosong, sistem akan menggunakan API Key Global sebagai fallback.</p>
+                      </div>
+
+                      <div className="space-y-4 p-4 bg-slate-50 rounded-xl border">
+                        <h4 className="font-black text-slate-700 text-sm">API Key per Fitur</h4>
+                        
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase flex justify-between">
+                            <span>API Key - Text (AI Chat, Copilot, Quiz)</span>
+                            <span className="text-emerald-600">Model: gemini-2.0-flash</span>
+                          </label>
+                          <input type="password" value={aiConfig.textApiKey || ''} onChange={e=>setAiConfig({...aiConfig, textApiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-white text-sm" placeholder="AIzaSy... (Khusus fitur Text)" />
+                        </div>
+                        
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase flex justify-between">
+                            <span>API Key - Image (Ajaib Foto)</span>
+                            <span className="text-purple-600">Model: gemini-2.0-flash-exp-image-generation</span>
+                          </label>
+                          <input type="password" value={aiConfig.imageApiKey || ''} onChange={e=>setAiConfig({...aiConfig, imageApiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-white text-sm" placeholder="AIzaSy... (Khusus fitur Image)" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase flex justify-between">
+                          <span>API Key Global (Fallback jika key spesifik kosong)</span> 
+                          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Dapatkan Key Disini</a>
+                        </label>
+                        <input type="password" value={aiConfig.apiKey} onChange={e=>setAiConfig({...aiConfig, apiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-slate-50 text-sm" placeholder="AIzaSy... (Opsional, digunakan sebagai fallback)" />
+                      </div>
+
                       <div className="flex gap-4">
                          <button type="button" onClick={handleTestApiConnection} className="bg-slate-100 text-slate-600 font-black px-8 py-4 rounded-xl flex-1 hover:bg-slate-200">TEST KONEKSI</button>
                          <button type="submit" className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl flex-1 hover:bg-indigo-700">SIMPAN PENGATURAN</button>
