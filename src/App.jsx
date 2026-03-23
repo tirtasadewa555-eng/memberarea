@@ -315,13 +315,12 @@ export default function App() {
       }
       
       let url = "";
-      // FIX: Gunakan gemini-2.0-flash (Paling stabil untuk Text & Vision di Free Tier)
       if (type === 'text' || type === 'vision') {
           url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${keyToUse}`;
-      } else if (type === 'image_gen' || type === 'image_edit') {
-          // KHUSUS FREE TIER: Google API Key standar tidak punya akses ke Imagen model.
-          // Kita akan force trigger Error agar sistem langsung lari ke Seamless Fallback (Pollinations).
-          throw new Error("IMAGE_MODEL_RESTRICTED"); 
+      } else if (type === 'image_gen') {
+          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
+      } else if (type === 'image_edit') {
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
       }
       
       const res = await fetchWithRetry(url, {
@@ -566,31 +565,34 @@ export default function App() {
           const textData = await callGeminiAPI({ contents: [{ role: "user", parts: textParts }] }, 'vision');
           superPrompt = textData.candidates?.[0]?.content?.parts?.[0]?.text || photoInstruction;
       } catch (promptErr) {
-          console.warn("Gagal enhace prompt dengan Gemini, menggunakan prompt asli.", promptErr);
+          console.warn("Gagal enhance prompt dengan Gemini, menggunakan prompt asli.", promptErr);
       }
       
-      setPhotoGenStatus('Memproses rendering gambar (Seamless Server)...');
+      setPhotoGenStatus('Merender gambar secara native dengan Gemini AI...');
 
-      // 2. GENERATE GAMBAR (MENGGUNAKAN SEAMLESS FALLBACK POLLINATIONS)
-      // Karena Free Tier API Key Gemini tidak bisa Imagen 4, kita bypass dan langsung ke solusi gratis tanpa batas.
-      const randomSeed = Math.floor(Math.random() * 1000000);
-      let imgInst = encodeURIComponent(superPrompt.substring(0, 800)); // Limit karakter
-      
-      let finalImageUrl = `https://image.pollinations.ai/prompt/${imgInst}?seed=${randomSeed}&width=800&height=800&nologo=true`;
-      
-      // Ambil gambar dan jadikan Base64 agar bisa di-download dan di-save ke Firebase (CORS Bypass)
+      // 2. GENERATE GAMBAR (PURE GEMINI API)
+      const isTextToImage = photoImages.length === 0;
       let fullDataUrl = "";
-      try {
-          const imgRes = await fetch(finalImageUrl);
-          const blob = await imgRes.blob();
-          fullDataUrl = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.readAsDataURL(blob);
-          });
-      } catch(e) { 
-          // Jika konversi base64 gagal karena CORS browser, pakai URL asli (fallback terakhir)
-          fullDataUrl = finalImageUrl; 
+
+      if (isTextToImage) {
+          const payload = {
+              instances: { prompt: superPrompt },
+              parameters: { sampleCount: 1 }
+          };
+          const imgData = await callGeminiAPI(payload, 'image_gen');
+          const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
+          if (!generatedBase64) throw new Error("Gagal merender gambar. (Pastikan API Key mendukung akses Imagen)");
+          fullDataUrl = `data:image/png;base64,${generatedBase64}`;
+      } else {
+          const imageParts = [{ text: superPrompt }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
+          const payload = {
+              contents: [{ parts: imageParts }],
+              generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+          };
+          const imgData = await callGeminiAPI(payload, 'image_edit');
+          const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+          if (!generatedBase64) throw new Error("Gagal merender gambar. (Pastikan API Key mendukung Gemini Image Preview)");
+          fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
       }
 
       setPhotoResult(fullDataUrl);
