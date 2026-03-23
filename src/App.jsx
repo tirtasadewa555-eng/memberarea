@@ -289,23 +289,33 @@ export default function App() {
     let delay = 1000;
     for (let i = 0; i < maxRetries; i++) {
       try {
+        const res = await fetch(url, options);
+        return res;
+      } catch (err) {
+        if (i === maxRetries - 1) throw err;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+      }
+    }
+  };
+
   const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
       const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
-      let url = "";
+      let apiUrl = "";
       if (type === 'text') {
-          // FIX CERDAS: Gunakan gemini-flash-latest untuk Custom Key
+          // Gunakan gemini-flash-latest untuk Custom Key
           // Ini sangat kompatibel secara global untuk Text maupun Vision (membaca gambar)
-          const modelName = hasCustomKey ? "gemini-flash-latest" : "gemini-2.5-flash-preview-09-2025";
-          url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
+          const modelName = hasCustomKey ? "gemini-2.0-flash" : "gemini-2.0-flash";
+          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       } else if (type === 'image_edit') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
+          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${keyToUse}`;
       } else if (type === 'image_gen') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
+          apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${keyToUse}`;
       }
       
-      const res = await fetchWithRetry(url, {
+      const res = await fetchWithRetry(apiUrl, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       
@@ -313,15 +323,15 @@ export default function App() {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
           
-          // FIX PALING CERDAS: Strategi Multi-Layer Fallback Khusus Model Gambar
+          // Strategi Multi-Layer Fallback Khusus Model Gambar
           if (['image_edit', 'image_gen'].includes(type)) {
               if (hasCustomKey && (res.status === 404 || res.status === 403)) {
-                  // Layer 1: Coba gunakan koneksi Internal Canvas sejenak (Jika user sebenarnya ada di dalam Canvas tapi mengisi API Key)
+                  // Layer 1: Coba gunakan koneksi Internal Canvas sejenak
                   console.warn("Custom Key tidak di-whitelist untuk model gambar. Mencoba Internal Canvas...");
                   try {
                       return await callGeminiAPI(payload, type, true); 
                   } catch (internalErr) {
-                      throw new Error("IMAGE_MODEL_RESTRICTED"); // Gagal total, lanjut ke fallback eksternal
+                      throw new Error("IMAGE_MODEL_RESTRICTED");
                   }
               } else if (!hasCustomKey && res.status === 403) {
                   throw new Error("IMAGE_MODEL_RESTRICTED");
