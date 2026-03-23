@@ -595,23 +595,24 @@ export default function App() {
       else if (activePhotoFeature === 'banner') imgInst = `Create advertisement banner: ${superPrompt}. Preserve core identity.`;
       else if (activePhotoFeature === 'ucapan') imgInst = `Create greeting card: ${superPrompt}. Preserve face identity.`;
 
-      // GENIUS FIX: Dynamic Model Routing & External API Fallback
+      // Dynamic Model Routing & External API Fallback
       const isTextToImage = photoImages.length === 0;
       let fullDataUrl = "";
 
       if (isTextToImage) {
+          // Text-to-Image: Gunakan format contents/parts untuk gemini-2.0-flash-exp-image-generation
           const payload = {
-              instances: { prompt: imgInst },
-              parameters: { sampleCount: 1 }
+              contents: [{ parts: [{ text: imgInst }] }],
+              generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
           };
           try {
               const imgData = await callGeminiAPI(payload, 'image_gen');
-              const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-              if (!generatedBase64) throw new Error("Gagal merender gambar.");
+              const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+              if (!generatedBase64) throw new Error("Gagal merender gambar. Coba instruksi yang berbeda.");
               fullDataUrl = `data:image/png;base64,${generatedBase64}`;
           } catch (apiErr) {
               if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
-                  // LAYER 2 FALLBACK (Paling Handal): Gunakan Public Image AI Server secara Seamless
+                  // LAYER 2 FALLBACK: Gunakan Public Image AI Server secara Seamless
                   setPhotoGenStatus('Akses Google Image terbatas. Beralih ke Public AI Server (Seamless)...');
                   const randomSeed = Math.floor(Math.random() * 1000000);
                   fullDataUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgInst)}?seed=${randomSeed}&width=800&height=800&nologo=true`;
@@ -631,6 +632,7 @@ export default function App() {
               }
           }
       } else {
+          // Image-to-Image: Edit gambar yang sudah diupload
           const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
           const payload = { 
               contents: [{ parts: imageParts }],
@@ -639,7 +641,7 @@ export default function App() {
           try {
               const imgData = await callGeminiAPI(payload, 'image_edit');
               const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-              if (!generatedBase64) throw new Error("Gagal merender gambar.");
+              if (!generatedBase64) throw new Error("Gagal merender gambar. Coba instruksi yang berbeda.");
               fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
           } catch (apiErr) {
               if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
