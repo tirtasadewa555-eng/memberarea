@@ -338,17 +338,10 @@ export default function App() {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
           
-          // Strategi Multi-Layer Fallback Khusus Model Gambar
+          // Untuk model gambar, langsung throw IMAGE_MODEL_RESTRICTED agar fallback bisa bekerja
           if (['image_edit', 'image_gen'].includes(type)) {
-              if (hasCustomKey && (res.status === 404 || res.status === 403)) {
-                  // Layer 1: Coba gunakan koneksi Internal Canvas sejenak
-                  console.warn("Custom Key tidak di-whitelist untuk model gambar. Mencoba Internal Canvas...");
-                  try {
-                      return await callGeminiAPI(payload, type, true); 
-                  } catch (internalErr) {
-                      throw new Error("IMAGE_MODEL_RESTRICTED");
-                  }
-              } else if (!hasCustomKey && res.status === 403) {
+              if (res.status === 404 || res.status === 403 || res.status === 400) {
+                  console.warn("Image API error:", res.status, errorMsg);
                   throw new Error("IMAGE_MODEL_RESTRICTED");
               }
           }
@@ -599,8 +592,29 @@ export default function App() {
       const isTextToImage = photoImages.length === 0;
       let fullDataUrl = "";
 
+      // Helper: Fallback ke Pollinations AI untuk Text-to-Image
+      const fallbackToPollinations = async (prompt) => {
+          setPhotoGenStatus('Menggunakan AI Server alternatif...');
+          const randomSeed = Math.floor(Math.random() * 1000000);
+          let pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${randomSeed}&width=800&height=800&nologo=true`;
+          
+          // Coba konversi ke Base64 agar bisa disimpan
+          try {
+              const imgRes = await fetch(pollinationsUrl);
+              const blob = await imgRes.blob();
+              return await new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result);
+                  reader.readAsDataURL(blob);
+              });
+          } catch(e) { 
+              console.warn("CORS issue, using direct URL"); 
+              return pollinationsUrl;
+          }
+      };
+
       if (isTextToImage) {
-          // Text-to-Image: Gunakan format contents/parts untuk gemini-2.0-flash-exp-image-generation
+          // Text-to-Image: Coba Gemini dulu, fallback ke Pollinations
           const payload = {
               contents: [{ parts: [{ text: imgInst }] }],
               generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
@@ -608,31 +622,15 @@ export default function App() {
           try {
               const imgData = await callGeminiAPI(payload, 'image_gen');
               const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-              if (!generatedBase64) throw new Error("Gagal merender gambar. Coba instruksi yang berbeda.");
+              if (!generatedBase64) throw new Error("NO_IMAGE_DATA");
               fullDataUrl = `data:image/png;base64,${generatedBase64}`;
           } catch (apiErr) {
-              if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
-                  // LAYER 2 FALLBACK: Gunakan Public Image AI Server secara Seamless
-                  setPhotoGenStatus('Akses Google Image terbatas. Beralih ke Public AI Server (Seamless)...');
-                  const randomSeed = Math.floor(Math.random() * 1000000);
-                  fullDataUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgInst)}?seed=${randomSeed}&width=800&height=800&nologo=true`;
-                  
-                  // Coba fetch dan konversi ke Base64 agar riwayat gambar bisa di-save dan didownload dengan aman
-                  try {
-                      const imgRes = await fetch(fullDataUrl);
-                      const blob = await imgRes.blob();
-                      fullDataUrl = await new Promise((resolve) => {
-                          const reader = new FileReader();
-                          reader.onloadend = () => resolve(reader.result);
-                          reader.readAsDataURL(blob);
-                      });
-                  } catch(e) { console.warn("CORS issue fetching fallback image, using direct URL"); }
-              } else {
-                  throw apiErr;
-              }
+              // Fallback ke Pollinations untuk semua error image API
+              console.warn("Gemini image API error, falling back to Pollinations:", apiErr.message);
+              fullDataUrl = await fallbackToPollinations(imgInst);
           }
       } else {
-          // Image-to-Image: Edit gambar yang sudah diupload
+          // Image-to-Image: Edit gambar yang sudah diupload (hanya Gemini yang bisa)
           const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
           const payload = { 
               contents: [{ parts: imageParts }],
@@ -644,8 +642,9 @@ export default function App() {
               if (!generatedBase64) throw new Error("Gagal merender gambar. Coba instruksi yang berbeda.");
               fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
           } catch (apiErr) {
-              if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
-                  throw new Error("API Key Anda valid untuk Chat, tapi akses Edit Gambar ditolak oleh Google. Kosongkan API Key di Pengaturan jika Anda menggunakan Canvas bawaan, atau gunakan fitur Text-to-Image.");
+              // Untuk edit gambar, API key harus memiliki akses ke model image
+              if (apiErr.message === "IMAGE_MODEL_RESTRICTED" || apiErr.message.includes("403") || apiErr.message.includes("not found")) {
+                  throw new Error("Fitur edit gambar memerlukan API Key dengan akses model gambar Gemini. Silakan gunakan fitur Text-to-Image yang tersedia tanpa batasan.");
               } else {
                   throw apiErr;
               }
