@@ -298,17 +298,21 @@ export default function App() {
     throw new Error("Maksimal percobaan koneksi tercapai. Server AI sedang sibuk.");
   };
 
-  const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
-      const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
+  const callGeminiAPI = async (payload, type = 'text') => {
+      const hasCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
       let url = "";
       if (type === 'text') {
-          const modelName = hasCustomKey ? "gemini-2.5-flash" : "gemini-2.5-flash-preview-09-2025";
+          // FIX CERDAS: Gunakan gemini-flash-latest untuk Custom Key
+          // Ini sangat kompatibel secara global untuk Text maupun Vision (membaca gambar)
+          const modelName = hasCustomKey ? "gemini-flash-latest" : "gemini-2.5-flash-preview-09-2025";
           url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       } else if (type === 'image_edit') {
+          // Model spesifik Image-to-Image / Editing
           url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
       } else if (type === 'image_gen') {
+          // Model spesifik Text-to-Image Generation
           url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
       }
       
@@ -320,17 +324,14 @@ export default function App() {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
           
-          // GENIUS FIX: Stealth Fallback! 
-          // Jika API Key kustom tidak punya akses model Image Preview / Imagen (403/404),
-          // sistem otomatis beralih menggunakan server internal Canvas tanpa menimbulkan error!
-          if ((res.status === 404 || res.status === 403) && ['image_edit', 'image_gen'].includes(type) && hasCustomKey) {
-              console.warn("API Key kustom ditolak untuk model gambar. Melakukan Stealth-Fallback ke server internal...");
-              return callGeminiAPI(payload, type, true);
+          if (res.status === 403 && !hasCustomKey) {
+              // Jika tidak punya custom key dan tidak di dalam Canvas
+              errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
+          } else if ((res.status === 404 || res.status === 403) && ['image_edit', 'image_gen'].includes(type) && hasCustomKey) {
+              // FIX: Hapus stealth fallback yang menyesatkan, berikan laporan akurat ke pengguna
+              errorMsg = "API Key Anda valid untuk chat/teks, namun belum di-whitelist oleh Google untuk model Pembuat Gambar rahasia (Imagen 4 / Flash Image Preview).";
           }
           
-          if (res.status === 403 && !hasCustomKey) {
-              errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
-          }
           throw new Error(errorMsg);
       }
       return await res.json();
