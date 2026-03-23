@@ -289,17 +289,8 @@ export default function App() {
     let delay = 1000;
     for (let i = 0; i < maxRetries; i++) {
       try {
-        const response = await fetch(url, options);
-        if (response.ok || [400, 401, 403, 404].includes(response.status)) return response;
-      } catch (err) { if (i === maxRetries - 1) throw err; }
-      await new Promise(resolve => setTimeout(resolve, delay));
-      delay *= 2; 
-    }
-    throw new Error("Maksimal percobaan koneksi tercapai. Server AI sedang sibuk.");
-  };
-
-  const callGeminiAPI = async (payload, type = 'text') => {
-      const hasCustomKey = aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
+  const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
+      const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
       
       let url = "";
@@ -309,10 +300,8 @@ export default function App() {
           const modelName = hasCustomKey ? "gemini-flash-latest" : "gemini-2.5-flash-preview-09-2025";
           url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${keyToUse}`;
       } else if (type === 'image_edit') {
-          // Model spesifik Image-to-Image / Editing
           url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
       } else if (type === 'image_gen') {
-          // Model spesifik Text-to-Image Generation
           url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
       }
       
@@ -324,12 +313,23 @@ export default function App() {
           const errData = await res.json().catch(()=>({}));
           let errorMsg = errData.error?.message || `Error API: ${res.status}`;
           
-          if (res.status === 403 && !hasCustomKey) {
-              // Jika tidak punya custom key dan tidak di dalam Canvas
+          // FIX PALING CERDAS: Strategi Multi-Layer Fallback Khusus Model Gambar
+          if (['image_edit', 'image_gen'].includes(type)) {
+              if (hasCustomKey && (res.status === 404 || res.status === 403)) {
+                  // Layer 1: Coba gunakan koneksi Internal Canvas sejenak (Jika user sebenarnya ada di dalam Canvas tapi mengisi API Key)
+                  console.warn("Custom Key tidak di-whitelist untuk model gambar. Mencoba Internal Canvas...");
+                  try {
+                      return await callGeminiAPI(payload, type, true); 
+                  } catch (internalErr) {
+                      throw new Error("IMAGE_MODEL_RESTRICTED"); // Gagal total, lanjut ke fallback eksternal
+                  }
+              } else if (!hasCustomKey && res.status === 403) {
+                  throw new Error("IMAGE_MODEL_RESTRICTED");
+              }
+          }
+
+          if (res.status === 403 && !hasCustomKey && type === 'text') {
               errorMsg = "Sistem berjalan di luar Canvas (Unregistered Caller). Harap login sebagai Admin dan masukkan API Key Gemini Anda di menu Pengaturan API & AI.";
-          } else if ((res.status === 404 || res.status === 403) && ['image_edit', 'image_gen'].includes(type) && hasCustomKey) {
-              // FIX: Hapus stealth fallback yang menyesatkan, berikan laporan akurat ke pengguna
-              errorMsg = "API Key Anda valid untuk chat/teks, namun belum di-whitelist oleh Google untuk model Pembuat Gambar rahasia (Imagen 4 / Flash Image Preview).";
           }
           
           throw new Error(errorMsg);
@@ -570,32 +570,59 @@ export default function App() {
       else if (activePhotoFeature === 'banner') imgInst = `Create advertisement banner: ${superPrompt}. Preserve core identity.`;
       else if (activePhotoFeature === 'ucapan') imgInst = `Create greeting card: ${superPrompt}. Preserve face identity.`;
 
-      // GENIUS FIX: Dynamic Model Routing
-      // Deteksi apakah user butuh Text-to-Image murni ATAU Image-to-Image
+      // GENIUS FIX: Dynamic Model Routing & External API Fallback
       const isTextToImage = photoImages.length === 0;
       let fullDataUrl = "";
 
       if (isTextToImage) {
-          // Gunakan Imagen 4.0 untuk Text-to-Image (Tidak ada gambar input dari user)
           const payload = {
               instances: { prompt: imgInst },
               parameters: { sampleCount: 1 }
           };
-          const imgData = await callGeminiAPI(payload, 'image_gen');
-          const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-          if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider (Imagen 4).");
-          fullDataUrl = `data:image/png;base64,${generatedBase64}`;
+          try {
+              const imgData = await callGeminiAPI(payload, 'image_gen');
+              const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
+              if (!generatedBase64) throw new Error("Gagal merender gambar.");
+              fullDataUrl = `data:image/png;base64,${generatedBase64}`;
+          } catch (apiErr) {
+              if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
+                  // LAYER 2 FALLBACK (Paling Handal): Gunakan Public Image AI Server secara Seamless
+                  setPhotoGenStatus('Akses Google Image terbatas. Beralih ke Public AI Server (Seamless)...');
+                  const randomSeed = Math.floor(Math.random() * 1000000);
+                  fullDataUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgInst)}?seed=${randomSeed}&width=800&height=800&nologo=true`;
+                  
+                  // Coba fetch dan konversi ke Base64 agar riwayat gambar bisa di-save dan didownload dengan aman
+                  try {
+                      const imgRes = await fetch(fullDataUrl);
+                      const blob = await imgRes.blob();
+                      fullDataUrl = await new Promise((resolve) => {
+                          const reader = new FileReader();
+                          reader.onloadend = () => resolve(reader.result);
+                          reader.readAsDataURL(blob);
+                      });
+                  } catch(e) { console.warn("CORS issue fetching fallback image, using direct URL"); }
+              } else {
+                  throw apiErr;
+              }
+          }
       } else {
-          // Gunakan Flash Image Preview untuk Image-to-Image / Editing (Ada gambar input)
           const imageParts = [{ text: imgInst }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
           const payload = { 
               contents: [{ parts: imageParts }],
               generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
           };
-          const imgData = await callGeminiAPI(payload, 'image_edit');
-          const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-          if (!generatedBase64) throw new Error("Gagal merender gambar dari AI Provider (Flash Image).");
-          fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
+          try {
+              const imgData = await callGeminiAPI(payload, 'image_edit');
+              const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+              if (!generatedBase64) throw new Error("Gagal merender gambar.");
+              fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
+          } catch (apiErr) {
+              if (apiErr.message === "IMAGE_MODEL_RESTRICTED") {
+                  throw new Error("API Key Anda valid untuk Chat, tapi akses Edit Gambar ditolak oleh Google. Kosongkan API Key di Pengaturan jika Anda menggunakan Canvas bawaan, atau gunakan fitur Text-to-Image.");
+              } else {
+                  throw apiErr;
+              }
+          }
       }
 
       setPhotoResult(fullDataUrl);
