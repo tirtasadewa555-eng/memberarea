@@ -289,6 +289,15 @@ export default function App() {
     let delay = 1000;
     for (let i = 0; i < maxRetries; i++) {
       try {
+        const response = await fetch(url, options);
+        if (response.ok || [400, 401, 403, 404].includes(response.status)) return response;
+      } catch (err) { if (i === maxRetries - 1) throw err; }
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay *= 2; 
+    }
+    throw new Error("Maksimal percobaan koneksi tercapai. Server AI sedang sibuk.");
+  };
+
   const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
       const hasCustomKey = !forceInternalKey && aiConfig.apiKey && aiConfig.apiKey.trim() !== "";
       const keyToUse = hasCustomKey ? aiConfig.apiKey.trim() : "";
