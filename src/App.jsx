@@ -28,12 +28,12 @@ const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
     apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
-	authDomain: "memberarea-websiteku.firebaseapp.com",
-	projectId: "memberarea-websiteku",
-	storageBucket: "memberarea-websiteku.firebasestorage.app",
-	messagingSenderId: "9418923099",
-	appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-	measurementId: "G-RQBKYLD4K5"
+    authDomain: "memberarea-websiteku.firebaseapp.com",
+    projectId: "memberarea-websiteku",
+    storageBucket: "memberarea-websiteku.firebasestorage.app",
+    messagingSenderId: "9418923099",
+    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+    measurementId: "G-RQBKYLD4K5"
   };
 };
 
@@ -150,7 +150,7 @@ export default function App() {
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [apiTestLogs, setApiTestLogs] = useState([]);
-  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
+  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: 'AIzaSyDfc2wI7NCOSiVkPnuEtUnZJBTSikX1tfQ', isActive: true });
   const [aiQuiz, setAiQuiz] = useState(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
