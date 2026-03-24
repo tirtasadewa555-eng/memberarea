@@ -150,6 +150,7 @@ export default function App() {
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [apiTestLogs, setApiTestLogs] = useState([]);
+  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
   const [aiQuiz, setAiQuiz] = useState(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
@@ -293,7 +294,7 @@ export default function App() {
   };
 
   const callGeminiAPI = async (payload, type = 'text') => {
-      const apiKey = ""; // Managed natively by the platform
+      const apiKey = aiConfig.apiKey ? aiConfig.apiKey.trim() : "";
       
       let url = "";
       if (type === 'text' || type === 'vision') {
@@ -425,7 +426,11 @@ export default function App() {
        setTickets(isAdmin ? allT : allT.filter(t => t.userId === user.uid));
     }, errHandler);
 
-    return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubPhotoHistory(); };
+    const unsubAi = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), (d) => { 
+       if (d.exists()) setAiConfig(d.data()); 
+    }, errHandler);
+
+    return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubPhotoHistory(); unsubAi(); };
   }, [user, isAdmin]);
 
   // --- Pomodoro Timer Engine ---
@@ -999,6 +1004,14 @@ export default function App() {
       showToast("File berhasil disimpan!");
     } catch(e) {}
     isProcessingAction.current = false;
+  };
+
+  const handleSaveAiConfig = async (e) => {
+    e.preventDefault();
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), aiConfig);
+      showToast("Seting AI Disimpan!");
+    } catch(e) {}
   };
 
   const handleTestApiConnection = async () => {
@@ -2186,12 +2199,19 @@ export default function App() {
             <div className="animate-fadeIn max-w-3xl mx-auto space-y-6">
                 <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Seting Sistem AI Global</h2>
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-xl">
-                    <div className="space-y-6">
+                    <form onSubmit={handleSaveAiConfig} className="space-y-6">
                         <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase">Status API Gemini & Imagen</label>
-                            <div className="w-full p-4 border border-emerald-200 rounded-xl font-bold bg-emerald-50 text-emerald-600 flex items-center gap-2 mt-2">
-                                <CheckCircle2 size={20} /> Terintegrasi secara otomatis oleh platform (Environment Canvas)
-                            </div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Provider AI (Wajib Gemini)</label>
+                            <select className="w-full p-4 border rounded-xl font-bold bg-slate-50 mt-2" value={aiConfig.provider} onChange={e=>setAiConfig({...aiConfig, provider: e.target.value})}>
+                                <option value="gemini">Google Gemini AI</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase flex justify-between">
+                                <span>API Key Global</span> 
+                                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Dapatkan Key Disini</a>
+                            </label>
+                            <input type="password" value={aiConfig.apiKey} onChange={e=>setAiConfig({...aiConfig, apiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-slate-50 text-sm mt-2" placeholder="AIzaSy... (Kosongkan jika menggunakan sistem default Canvas)" />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase">Daftar Model Pintar Aktif</label>
@@ -2214,12 +2234,15 @@ export default function App() {
                         )}
 
                         <div className="flex gap-4 pt-4 border-t border-slate-100">
-                           <button type="button" onClick={handleTestApiConnection} disabled={isTestingApi} className="bg-slate-900 text-white font-black px-8 py-5 rounded-xl flex-1 hover:bg-indigo-600 transition-all shadow-md disabled:opacity-50 flex justify-center items-center gap-2">
+                           <button type="button" onClick={handleTestApiConnection} disabled={isTestingApi} className="bg-slate-100 text-slate-600 font-black px-6 py-4 rounded-xl hover:bg-slate-200 transition-all disabled:opacity-50 flex justify-center items-center gap-2">
                                {isTestingApi ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
-                               TEST DIAGNOSTIK KONEKSI 3 MODEL AI
+                               TEST KONEKSI
+                           </button>
+                           <button type="submit" className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl flex-1 hover:bg-indigo-700 transition-all shadow-md">
+                               SIMPAN PENGATURAN API
                            </button>
                         </div>
-                    </div>
+                    </form>
                 </div>
             </div>
           )}
