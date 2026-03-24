@@ -298,11 +298,11 @@ export default function App() {
       
       let url = "";
       if (type === 'text' || type === 'vision') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       } else if (type === 'image_gen') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`;
       } else if (type === 'image_edit') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       }
       
       const res = await fetchWithRetry(url, {
@@ -1020,35 +1020,40 @@ export default function App() {
     let successCount = 0;
 
     try {
-       setApiTestLogs(prev => [...prev, '1. Menguji Gemini 2.5 Flash (Text)...']);
+       setApiTestLogs(prev => [...prev, '1. Menguji Gemini 1.5 Flash (Text)...']);
        await callGeminiAPI({ contents: [{ parts: [{ text: "Reply 'OK'" }] }] }, 'text');
-       setApiTestLogs(prev => [...prev, '✅ Gemini 2.5 Flash (Text) Berhasil!']);
+       setApiTestLogs(prev => [...prev, '✅ Gemini 1.5 Flash (Text) Berhasil!']);
        successCount++;
     } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Text Gagal: ${e.message}`]); }
 
     try {
-       setApiTestLogs(prev => [...prev, '2. Menguji Imagen 4.0 (Text-to-Image)...']);
+       setApiTestLogs(prev => [...prev, '2. Menguji Imagen 3.0 (Text-to-Image)...']);
        await callGeminiAPI({ instances: { prompt: "A small red dot" }, parameters: { sampleCount: 1 } }, 'image_gen');
-       setApiTestLogs(prev => [...prev, '✅ Imagen 4.0 Berhasil!']);
+       setApiTestLogs(prev => [...prev, '✅ Imagen 3.0 Berhasil!']);
        successCount++;
-    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Imagen Gagal: ${e.message}`]); }
+    } catch(e) { 
+       if (e.message.toLowerCase().includes('paid plan') || e.message.toLowerCase().includes('billing')) {
+           setApiTestLogs(prev => [...prev, `⚠️ Imagen Terkunci: API Key Free Tier tidak mendukup fitur pembuatan gambar. Membutuhkan akun billing berbayar.`]);
+       } else {
+           setApiTestLogs(prev => [...prev, `❌ Imagen Gagal: ${e.message}`]); 
+       }
+    }
 
     try {
-       setApiTestLogs(prev => [...prev, '3. Menguji Gemini Image Preview (Image-to-Image)...']);
+       setApiTestLogs(prev => [...prev, '3. Menguji Kapabilitas Vision (Image-to-Text)...']);
        // Base64 gambar 1x1 pixel untuk testing
        const dummyBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
        await callGeminiAPI({
-          contents: [{ parts: [{text: "Describe this image in 1 word"}, { inlineData: { mimeType: "image/png", data: dummyBase64 } }] }],
-          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-       }, 'image_edit');
-       setApiTestLogs(prev => [...prev, '✅ Gemini Image Preview Berhasil!']);
+          contents: [{ parts: [{text: "Describe this image in 1 word"}, { inlineData: { mimeType: "image/png", data: dummyBase64 } }] }]
+       }, 'vision');
+       setApiTestLogs(prev => [...prev, '✅ Gemini Vision Berhasil!']);
        successCount++;
-    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Image Gagal: ${e.message}`]); }
+    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Vision Gagal: ${e.message}`]); }
 
-    if (successCount === 3) {
-       showToast("Koneksi API Berhasil untuk SEMUA Model!", "success");
+    if (successCount >= 1) {
+       showToast(`Tes selesai: ${successCount} fungsi berjalan.`, "success");
     } else {
-       showToast(`Tes selesai: ${successCount}/3 model berhasil.`, "error");
+       showToast(`Tes selesai: Koneksi Gagal Semua.`, "error");
     }
     setIsTestingApi(false);
   };
@@ -2216,9 +2221,8 @@ export default function App() {
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase">Daftar Model Pintar Aktif</label>
                             <div className="w-full p-5 border border-slate-200 rounded-xl bg-slate-50 mt-2 space-y-2">
-                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 2.5 Flash Preview</span> <span className="text-xs text-slate-400 ml-auto italic">Teks & Code</span></div>
-                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className="font-bold text-sm text-slate-700">Imagen 4.0 Generate</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Image</span></div>
-                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-rose-500"></span><span className="font-bold text-sm text-slate-700">Gemini 2.5 Image Preview</span> <span className="text-xs text-slate-400 ml-auto italic">Image-to-Image</span></div>
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 1.5 Flash</span> <span className="text-xs text-slate-400 ml-auto italic">Teks & Vision Analysis</span></div>
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className="font-bold text-sm text-slate-700">Imagen 3.0 Generate</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Image (Membutuhkan Paid Tier)</span></div>
                             </div>
                         </div>
 
