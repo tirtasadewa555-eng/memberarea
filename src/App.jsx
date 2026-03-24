@@ -28,11 +28,11 @@ const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) return JSON.parse(__firebase_config);
   return {
     apiKey: "AIzaSyC_go5YDW885EE1LUyeMBppyC-Zt18jYdQ",
-    authDomain: "memberarea-websiteku.firebaseapp.com",
-    projectId: "memberarea-websiteku",
-    storageBucket: "memberarea-websiteku.firebasestorage.app",
-    messagingSenderId: "9418923099",
-    appId: "1:9418923099:web:f0275b81b802c08bb3737e",
+	authDomain: "memberarea-websiteku.firebaseapp.com",
+	projectId: "memberarea-websiteku",
+	storageBucket: "memberarea-websiteku.firebasestorage.app",
+	messagingSenderId: "9418923099",
+	appId: "1:9418923099:web:f0275b81b802c08bb3737e",
 	measurementId: "G-RQBKYLD4K5"
   };
 };
@@ -149,6 +149,7 @@ export default function App() {
   const [copilotResult, setCopilotResult] = useState('');
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
   const [isTestingApi, setIsTestingApi] = useState(false);
+  const [apiTestLogs, setApiTestLogs] = useState([]);
   const [aiQuiz, setAiQuiz] = useState(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
@@ -1002,10 +1003,40 @@ export default function App() {
 
   const handleTestApiConnection = async () => {
     setIsTestingApi(true);
+    setApiTestLogs(['Memulai tes diagnostik koneksi ke 3 model AI...']);
+    let successCount = 0;
+
     try {
-       await fetchFromAI("Balas dengan singkat: KONEKSI_SUKSES");
-       showToast("Koneksi API Berhasil!", "success");
-    } catch(e) { showToast(`Koneksi Gagal: ${e.message}`, "error"); }
+       setApiTestLogs(prev => [...prev, '1. Menguji Gemini 2.5 Flash (Text)...']);
+       await callGeminiAPI({ contents: [{ parts: [{ text: "Reply 'OK'" }] }] }, 'text');
+       setApiTestLogs(prev => [...prev, '✅ Gemini 2.5 Flash (Text) Berhasil!']);
+       successCount++;
+    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Text Gagal: ${e.message}`]); }
+
+    try {
+       setApiTestLogs(prev => [...prev, '2. Menguji Imagen 4.0 (Text-to-Image)...']);
+       await callGeminiAPI({ instances: { prompt: "A small red dot" }, parameters: { sampleCount: 1 } }, 'image_gen');
+       setApiTestLogs(prev => [...prev, '✅ Imagen 4.0 Berhasil!']);
+       successCount++;
+    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Imagen Gagal: ${e.message}`]); }
+
+    try {
+       setApiTestLogs(prev => [...prev, '3. Menguji Gemini Image Preview (Image-to-Image)...']);
+       // Base64 gambar 1x1 pixel untuk testing
+       const dummyBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+       await callGeminiAPI({
+          contents: [{ parts: [{text: "Describe this image in 1 word"}, { inlineData: { mimeType: "image/png", data: dummyBase64 } }] }],
+          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+       }, 'image_edit');
+       setApiTestLogs(prev => [...prev, '✅ Gemini Image Preview Berhasil!']);
+       successCount++;
+    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Image Gagal: ${e.message}`]); }
+
+    if (successCount === 3) {
+       showToast("Koneksi API Berhasil untuk SEMUA Model!", "success");
+    } else {
+       showToast(`Tes selesai: ${successCount}/3 model berhasil.`, "error");
+    }
     setIsTestingApi(false);
   };
 
@@ -2159,7 +2190,7 @@ export default function App() {
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase">Status API Gemini & Imagen</label>
                             <div className="w-full p-4 border border-emerald-200 rounded-xl font-bold bg-emerald-50 text-emerald-600 flex items-center gap-2 mt-2">
-                                <CheckCircle2 size={20} /> Terintegrasi secara otomatis oleh platform
+                                <CheckCircle2 size={20} /> Terintegrasi secara otomatis oleh platform (Environment Canvas)
                             </div>
                         </div>
                         <div>
@@ -2170,9 +2201,22 @@ export default function App() {
                                 <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-rose-500"></span><span className="font-bold text-sm text-slate-700">Gemini 2.5 Image Preview</span> <span className="text-xs text-slate-400 ml-auto italic">Image-to-Image</span></div>
                             </div>
                         </div>
+
+                        {apiTestLogs.length > 0 && (
+                            <div className="bg-slate-900 text-emerald-400 p-5 rounded-2xl font-mono text-xs space-y-2 mt-4 shadow-inner">
+                                {apiTestLogs.map((log, i) => (
+                                    <div key={i} className={`flex items-start gap-2 ${log.includes('❌') ? 'text-rose-400' : log.includes('✅') ? 'text-emerald-400' : 'text-slate-300'}`}>
+                                        <span>{log.includes('✅') ? '›' : log.includes('❌') ? '!' : '>'}</span>
+                                        <span>{log}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         <div className="flex gap-4 pt-4 border-t border-slate-100">
-                           <button type="button" onClick={handleTestApiConnection} className="bg-slate-900 text-white font-black px-8 py-4 rounded-xl flex-1 hover:bg-indigo-600 transition-all shadow-md">
-                               TEST PING KONEKSI AI
+                           <button type="button" onClick={handleTestApiConnection} disabled={isTestingApi} className="bg-slate-900 text-white font-black px-8 py-5 rounded-xl flex-1 hover:bg-indigo-600 transition-all shadow-md disabled:opacity-50 flex justify-center items-center gap-2">
+                               {isTestingApi ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
+                               TEST DIAGNOSTIK KONEKSI 3 MODEL AI
                            </button>
                         </div>
                     </div>
