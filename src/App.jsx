@@ -33,7 +33,7 @@ const getFirebaseConfig = () => {
     storageBucket: "memberarea-websiteku.firebasestorage.app",
     messagingSenderId: "9418923099",
     appId: "1:9418923099:web:f0275b81b802c08bb3737e",
-    measurementId: "G-RQBKYLD4K5"
+	measurementId: "G-RQBKYLD4K5"
   };
 };
 
@@ -69,7 +69,7 @@ const GLOBAL_CSS = `
   @media print { body * { visibility: hidden; } #printable-certificate, #printable-certificate * { visibility: visible; } #printable-certificate { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 9999; background: white; } }
 `;
 
-// Helper Pengaman Error Render "Blank Screen"
+// Helper
 const getFirstName = (nameStr) => {
   if (!nameStr) return 'Member';
   return nameStr.split(' ')[0] || 'Member';
@@ -80,10 +80,8 @@ const sanitizeHTML = (str) => {
     return str.replace(/<script[^>]*>([\S\s]*?)<\/script>/gmi, '').replace(/<\/?\w+((\s+\w+(\s*=\s*(?:".*?"|'.*?'|[^'">\s]+))?)+\s*|\s*)\/?>/gmi, (m) => m.replace(/on\w+\s*=/gi, 'data-blocked=')).replace(/javascript:/gi, 'blocked:');
 };
 const escapeInput = (str) => str ? String(str).replace(/[<>]/g, "").trim() : ''; 
-const safeJSONParse = (str) => {
-    try { let cleanStr = str.replace(/```json/gi, '').replace(/```/g, '').trim(); const startIdx = cleanStr.indexOf('{'); const endIdx = cleanStr.lastIndexOf('}'); if (startIdx !== -1 && endIdx !== -1) cleanStr = cleanStr.substring(startIdx, endIdx + 1); return JSON.parse(cleanStr); } catch (e) { return null; }
-};
 
+// Inisialisasi Firebase di luar komponen
 let firebaseApp, auth, db;
 const isConfigReady = firebaseConfig && firebaseConfig.apiKey !== "dummy";
 
@@ -147,14 +145,9 @@ export default function App() {
   const [isGeneratingLP, setIsGeneratingLP] = useState(false);
 
   // --- AI States ---
-  const [isAIOpen, setIsAIOpen] = useState(false);
-  const [aiTyping, setAiTyping] = useState(false);
-  const [aiInput, setAiInput] = useState('');
-  const [aiMessages, setAiMessages] = useState([{ role: 'ai', text: 'Halo! Saya ProSpace AI Mentor. Butuh panduan belajar, komisi, atau teknis?' }]);
   const [copilotForm, setCopilotForm] = useState({ product: 'ProSpace VIP', platform: 'whatsapp', tone: 'fomo' });
   const [copilotResult, setCopilotResult] = useState('');
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
-  const [aiConfig, setAiConfig] = useState({ provider: 'gemini', apiKey: '', isActive: true });
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [aiQuiz, setAiQuiz] = useState(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
@@ -186,7 +179,6 @@ export default function App() {
 
   const focusStartTimeRef = useRef(null);
   const chatEndRef = useRef(null);
-  const aiEndRef = useRef(null);
   const isProcessingAction = useRef(false);
 
   // --- Derived States & Safe Fallbacks ---
@@ -225,12 +217,6 @@ export default function App() {
   const sortedChat = useMemo(() => [...chatMessages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt)), [chatMessages]);
   const accessibleFiles = useMemo(() => files.filter(f => currentTier >= f.reqLevel), [files, currentTier]);
   
-  const progressData = useMemo(() => {
-    if(accessibleFiles.length === 0) return 0;
-    const count = completedFiles.filter(id => accessibleFiles.some(f => f.id === id)).length;
-    return Math.round((count / accessibleFiles.length) * 100);
-  }, [accessibleFiles, completedFiles]);
-
   const activeLesson = useMemo(() => {
       const mod = academyModules.find(m => m.id === activeCourseId);
       return mod?.lessons?.find(l => l.id === activeLessonId) || null;
@@ -283,63 +269,49 @@ export default function App() {
   };
 
   // ==========================================
-  // LOGIC: API NETWORK (PERFECTED FOR GEMINI FREE TIER)
+  // LOGIC: API NETWORK (PERFECTED FOR GEMINI ENV)
   // ==========================================
-  const fetchWithRetry = async (url, options, maxRetries = 4) => {
-    let delay = 1500; // Mulai dengan delay 1.5 detik untuk mitigasi limit
-    for (let i = 0; i < maxRetries; i++) {
+  const fetchWithRetry = async (url, options) => {
+    const delays = [1000, 2000, 4000, 8000, 16000]; // Standard exponential backoff
+    for (let i = 0; i < delays.length; i++) {
       try {
         const response = await fetch(url, options);
-        // Jika sukses atau error yang bukan karena server/rate limit
-        if (response.ok || [400, 401, 403, 404].includes(response.status)) return response;
-        
-        // Tangkap error 429 (Too Many Requests - Sering terjadi di Free Tier)
-        if (response.status === 429) {
-          console.warn(`Rate Limit Gemini API tercapai. Mencoba lagi dalam ${delay}ms...`);
+        if (response.ok) return response;
+        if ([400, 401, 403, 404].includes(response.status)) {
+            const errData = await response.json().catch(()=>({}));
+            throw new Error(errData.error?.message || `Error API: ${response.status}`);
         }
-      } catch (err) { 
-        if (i === maxRetries - 1) throw err; 
+      } catch (err) {
+        if (i === delays.length - 1) throw err;
       }
-      // Exponential backoff untuk mengatasi limit 15 RPM Free Tier
-      await new Promise(resolve => setTimeout(resolve, delay));
-      delay *= 2; 
+      if (i < delays.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, delays[i]));
+      }
     }
-    throw new Error("Server AI sedang sibuk (Rate Limit). Silakan coba beberapa saat lagi.");
+    throw new Error("Layanan AI sedang sibuk (Rate Limit). Silakan coba lagi nanti.");
   };
 
-  const callGeminiAPI = async (payload, type = 'text', forceInternalKey = false) => {
-      const keyToUse = aiConfig.apiKey ? aiConfig.apiKey.trim() : "";
-      
-      if (!keyToUse) {
-          throw new Error("API Key Gemini belum diatur. Masuk sebagai Admin ke menu Pengaturan API & AI.");
-      }
+  const callGeminiAPI = async (payload, type = 'text') => {
+      const apiKey = ""; // Managed natively by the platform
       
       let url = "";
       if (type === 'text' || type === 'vision') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${keyToUse}`;
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
       } else if (type === 'image_gen') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${keyToUse}`;
+          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
       } else if (type === 'image_edit') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${keyToUse}`;
+          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
       }
       
       const res = await fetchWithRetry(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       
-      if (!res.ok) {
-          const errData = await res.json().catch(()=>({}));
-          let errorMsg = errData.error?.message || `Error API: ${res.status}`;
-          throw new Error(errorMsg);
-      }
       return await res.json();
   };
 
-  const fetchFromAI = async (promptText, jsonMode = false) => {
+  const fetchFromAI = async (promptText) => {
       const payload = { contents: [{ parts: [{ text: promptText }] }] };
-      if (jsonMode) {
-          payload.generationConfig = { responseMimeType: "application/json" };
-      }
       const data = await callGeminiAPI(payload, 'text');
       return data.candidates[0].content.parts[0].text;
   };
@@ -349,6 +321,39 @@ export default function App() {
   // ==========================================
   useEffect(() => {
     if (!isConfigReady) { setLoading(false); return; }
+
+    const initAuth = async () => { 
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token); 
+        } else {
+          await signInAnonymously(auth); 
+        }
+      } catch(e) {}
+    };
+    initAuth();
+    
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+      if(u && !u.isAnonymous) {
+          setUser(u);
+          const checkIsAdmin = u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+          setIsAdmin(checkIsAdmin);
+          if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
+      } else {
+          setUser(u); 
+          setIsAdmin(false);
+      }
+      setLoading(false);
+    });
+    return () => unsubAuth();
+  }, [activeTab]);
+
+  const isEditingLPRef = useRef(isEditingLP);
+  useEffect(() => { isEditingLPRef.current = isEditingLP; }, [isEditingLP]);
+
+  useEffect(() => {
+    if (!user || !isConfigReady) return;
+    const errHandler = (e) => console.error("Firestore Error:", e);
 
     const checkPublicSite = async () => {
         const params = new URLSearchParams(window.location.search);
@@ -362,34 +367,6 @@ export default function App() {
         }
     };
     checkPublicSite();
-
-    const initAuth = async () => { 
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {} } 
-      else { try { await signInAnonymously(auth); } catch(e) {} }
-    };
-    initAuth();
-    
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
-      if(u && !u.isAnonymous) {
-          setUser(u);
-          const checkIsAdmin = u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-          setIsAdmin(checkIsAdmin);
-          if (checkIsAdmin && activeTab === 'dashboard') setActiveTab('admin_overview');
-      } else {
-          setUser(null);
-          setIsAdmin(false);
-      }
-      setLoading(false);
-    });
-    return () => unsubAuth();
-  }, []);
-
-  const isEditingLPRef = useRef(isEditingLP);
-  useEffect(() => { isEditingLPRef.current = isEditingLP; }, [isEditingLP]);
-
-  useEffect(() => {
-    if (!user || !isConfigReady) return;
-    const errHandler = (e) => console.error("Firestore Error:", e);
 
     const unsubProfile = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), (d) => {
       if (d.exists()) { setUserData(d.data()); setProfileForm(prev => ({ ...prev, phone: d.data().phone || '', bank: d.data().bank || '', accountNo: d.data().accountNo || '' })); }
@@ -447,9 +424,7 @@ export default function App() {
        setTickets(isAdmin ? allT : allT.filter(t => t.userId === user.uid));
     }, errHandler);
 
-    const unsubAi = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), (d) => { if (d.exists()) setAiConfig(d.data()); }, errHandler);
-
-    return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubAi(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubPhotoHistory(); };
+    return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubPhotoHistory(); };
   }, [user, isAdmin]);
 
   // --- Pomodoro Timer Engine ---
@@ -479,7 +454,6 @@ export default function App() {
   const formatTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; };
 
   useEffect(() => { if (activeTab === 'community') chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [sortedChat, activeTab]);
-  useEffect(() => { if (isAIOpen) aiEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages, isAIOpen]);
 
   // ==========================================
   // LOGIC ACTIONS: AJAIB FOTO (IMAGE STUDIO)
@@ -534,7 +508,6 @@ export default function App() {
   };
 
   const handleGeneratePhoto = async () => {
-    if (!aiConfig.isActive) return showToast("Fitur AI sedang dinonaktifkan oleh Admin.", "error");
     if (currentTier < 1 && !isAdmin) return showToast("Akses Ditolak. Minimal lisensi paket Personal.", "error");
     
     const txts = getPhotoFeatureTexts();
@@ -545,8 +518,8 @@ export default function App() {
     setIsGeneratingPhoto(true); setPhotoResult(null); setPhotoGenStatus('Menganalisis prompt dengan Gemini AI...');
 
     try {
-      // 1. OLAHKAN PROMPT DENGAN GEMINI TEXT (Free Tier Sangat Cepat untuk ini)
-      let textPrompt = `Act as an Expert Midjourney/DALL-E Prompt Engineer. Rewrite this instruction into a highly detailed, professional english image generation prompt: "${photoInstruction}". `;
+      // 1. OLAHKAN PROMPT DENGAN GEMINI TEXT/VISION
+      let textPrompt = `Act as an Expert Prompt Engineer. Rewrite this instruction into a highly detailed, professional english image generation prompt: "${photoInstruction}". `;
       if (activePhotoFeature === 'gabung') textPrompt += `Make sure the prompt describes merging the core subjects of the uploaded concept.`;
       else if (activePhotoFeature === 'photoshoot') textPrompt += `Make it a high-end product photoshoot prompt.`;
       else if (activePhotoFeature === 'model') textPrompt += `Make it a hyper-realistic 8k portrait prompt.`;
@@ -554,12 +527,11 @@ export default function App() {
       else if (activePhotoFeature === 'banner') textPrompt += `Make it a prompt for a high-converting commercial banner.`;
       textPrompt += ` Output ONLY the final english prompt text. No explanations.`;
 
-      let superPrompt = photoInstruction; // Default jika gagal
+      let superPrompt = photoInstruction;
 
       try {
           const textParts = [{ text: textPrompt }];
           if (photoImages.length > 0) {
-              // Jika ada gambar, gunakan kapabilitas Vision Gemini Flash
               textParts.push(...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } })));
           }
           const textData = await callGeminiAPI({ contents: [{ role: "user", parts: textParts }] }, 'vision');
@@ -570,7 +542,7 @@ export default function App() {
       
       setPhotoGenStatus('Merender gambar secara native dengan Gemini AI...');
 
-      // 2. GENERATE GAMBAR (PURE GEMINI API)
+      // 2. GENERATE GAMBAR
       const isTextToImage = photoImages.length === 0;
       let fullDataUrl = "";
 
@@ -581,7 +553,7 @@ export default function App() {
           };
           const imgData = await callGeminiAPI(payload, 'image_gen');
           const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-          if (!generatedBase64) throw new Error("Gagal merender gambar. (Pastikan API Key mendukung akses Imagen)");
+          if (!generatedBase64) throw new Error("Gagal merender gambar. Coba variasi kalimat lain.");
           fullDataUrl = `data:image/png;base64,${generatedBase64}`;
       } else {
           const imageParts = [{ text: superPrompt }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
@@ -591,7 +563,7 @@ export default function App() {
           };
           const imgData = await callGeminiAPI(payload, 'image_edit');
           const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-          if (!generatedBase64) throw new Error("Gagal merender gambar. (Pastikan API Key mendukung Gemini Image Preview)");
+          if (!generatedBase64) throw new Error("Gagal merender gambar.");
           fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
       }
 
@@ -603,7 +575,7 @@ export default function App() {
           await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), { feature: activePhotoFeature, instruction: photoInstruction, resultImage: fullDataUrl, createdAt: serverTimestamp() });
           logActivity(`${userFirstName} membuat mahakarya di AI Studio Foto! 🎨`, 'learn');
         } catch (e) {
-          console.warn("Ukuran Base64 terlalu besar untuk Firestore, gambar tidak disimpan di history.");
+          console.warn("Gambar berukuran besar tidak disimpan di history Firestore.");
         }
       }
     } catch (err) { 
@@ -648,7 +620,6 @@ export default function App() {
     const discountVal = appliedCoupon && appliedCoupon.active ? appliedCoupon.discount : 0;
     const trueFinalPrice = basePrice - (basePrice * discountVal / 100);
 
-    // AUTO APPROVE untuk Paket Free (0) atau Diskon 100%
     if (trueFinalPrice <= 0) {
         isProcessingAction.current = true;
         try {
@@ -685,7 +656,6 @@ export default function App() {
           await updateDoc(doc(db, 'artifacts', appId, 'users', trans.userId, 'profile', 'data'), { subscriptionLevel: trans.packageLevel });
           logActivity(`Upgrade sukses! ${getFirstName(trans.userName)} kini member ${trans.packageName} 🏆`, 'upgrade');
           
-          // PENYEMPURNAAN: Hitung Komisi Afiliasi berdasarkan Tier Referrer!
           const target = allUsers.find(u => u.uid === trans.userId);
           if (target && target.referredBy) {
               const referrerData = allUsers.find(u => u.uid === target.referredBy);
@@ -748,9 +718,25 @@ export default function App() {
     if (isProcessingAction.current || isGeneratingQuiz) return;
     setIsGeneratingQuiz(true); setAiQuiz(null); setSelectedQuizAnswer(null);
     try {
-      const prompt = `Buatkan 1 pertanyaan kuis pilihan ganda tentang digital marketing atau bisnis online untuk pemula. Berikan response hanya dalam format JSON valid dengan struktur: {"q": "pertanyaan", "options": ["opsi1", "opsi2", "opsi3", "opsi4"], "answer": 0_sd_3_index_jawaban_benar, "exp": "penjelasan_singkat"}`;
-      const res = await fetchFromAI(prompt, true);
-      const parsed = safeJSONParse(res);
+      const prompt = `Buatkan 1 pertanyaan kuis pilihan ganda tentang digital marketing atau bisnis online untuk pemula.`;
+      const payload = { 
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                  type: "OBJECT",
+                  properties: {
+                      q: { type: "STRING" },
+                      options: { type: "ARRAY", items: { type: "STRING" } },
+                      answer: { type: "INTEGER" },
+                      exp: { type: "STRING" }
+                  }
+              }
+          }
+      };
+      const res = await callGeminiAPI(payload, 'text');
+      const text = res.candidates[0].content.parts[0].text;
+      const parsed = JSON.parse(text);
       if(parsed && parsed.q) setAiQuiz(parsed);
       else throw new Error("Format AI tidak sesuai");
     } catch(e) { showToast("Gagal memuat kuis AI.", "error"); }
@@ -834,7 +820,7 @@ export default function App() {
 
   const handleGenerateCopy = async (e) => {
     e.preventDefault();
-    if(isGeneratingCopy || !aiConfig.isActive) return;
+    if(isGeneratingCopy) return;
     setIsGeneratingCopy(true);
     try {
       const prompt = `Buatkan copywriting marketing untuk platform ${copilotForm.platform} dengan gaya bahasa ${copilotForm.tone} untuk memasarkan produk: ${copilotForm.product}. Format hasil dengan HTML dasar (seperti <br> untuk baris baru, <b> untuk tebal).`;
@@ -1014,18 +1000,10 @@ export default function App() {
     isProcessingAction.current = false;
   };
 
-  const handleSaveAiConfig = async (e) => {
-    e.preventDefault();
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'ai_config'), aiConfig);
-      showToast("Seting AI Disimpan!");
-    } catch(e) {}
-  };
-
   const handleTestApiConnection = async () => {
     setIsTestingApi(true);
     try {
-       await fetchFromAI("Say 'API Connect OK'");
+       await fetchFromAI("Balas dengan singkat: KONEKSI_SUKSES");
        showToast("Koneksi API Berhasil!", "success");
     } catch(e) { showToast(`Koneksi Gagal: ${e.message}`, "error"); }
     setIsTestingApi(false);
@@ -1128,7 +1106,7 @@ export default function App() {
   // ==========================================
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
-  if (!user) return (
+  if (!user || (user.isAnonymous && typeof __initial_auth_token === 'undefined')) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-['Plus_Jakarta_Sans'] relative overflow-hidden">
       {toast.show && <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[300] px-6 py-3 rounded-2xl font-black text-sm shadow-2xl animate-slideUp border ${toast.type === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>{toast.msg}</div>}
       <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 border border-slate-100 animate-fadeIn relative z-10">
@@ -1189,7 +1167,7 @@ export default function App() {
               
               <div className="my-4 border-b border-slate-100"></div>
               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4 px-4 mt-2">Sistem AI & Edukasi</p>
-              <NavBtn active={activeTab==='admin_ai_config'} onClick={()=>{setActiveTab('admin_ai_config'); closeSidebarMobile();}} icon={<Cpu size={20} />} label="Pengaturan API & AI" />
+              <NavBtn active={activeTab==='admin_ai_config'} onClick={()=>{setActiveTab('admin_ai_config'); closeSidebarMobile();}} icon={<Cpu size={20} />} label="Status Sistem AI" />
               <NavBtn active={activeTab==='admin_academy'} onClick={()=>{setActiveTab('admin_academy'); closeSidebarMobile();}} icon={<GraduationCap size={20} />} label="Kelola Academy LMS" />
               <NavBtn active={activeTab==='admin_files'} onClick={()=>{setActiveTab('admin_files'); closeSidebarMobile();}} icon={<Plus size={20} />} label="Kelola Master File" />
               <NavBtn active={activeTab==='admin_coupons'} onClick={()=>{setActiveTab('admin_coupons'); closeSidebarMobile();}} icon={<Tag size={20} />} label="Kelola Kupon" />
@@ -1218,7 +1196,7 @@ export default function App() {
               <NavBtn active={activeTab==='landingpage'} onClick={()=>{setActiveTab('landingpage'); closeSidebarMobile();}} icon={<LayoutTemplate size={20} />} label="Web Replikator Pribadi" />
               <NavBtn active={activeTab==='affiliate'} onClick={()=>{setActiveTab('affiliate'); closeSidebarMobile();}} icon={<Network size={20} />} label="Penarikan Komisi" />
               <NavBtn active={activeTab==='leaderboard'} onClick={()=>{setActiveTab('leaderboard'); closeSidebarMobile();}} icon={<Trophy size={20} />} label="Peringkat Marketer" />
-              <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20} />} label="Kelola Lisensi (Upgrade/Downgrade)" />
+              <NavBtn active={activeTab==='shop'} onClick={()=>{setActiveTab('shop'); closeSidebarMobile();}} icon={<ShoppingBag size={20} />} label="Kelola Lisensi (Upgrade)" />
               <NavBtn active={activeTab==='transactions'} onClick={()=>{setActiveTab('transactions'); closeSidebarMobile();}} icon={<Banknote size={20} />} label="Riwayat Order" count={[...transactions].filter(t=>t.userId === user?.uid && t.status==='pending').length} />
               <NavBtn active={activeTab==='support'} onClick={()=>{setActiveTab('support'); closeSidebarMobile();}} icon={<LifeBuoy size={20} />} label="Tiket Bantuan" />
             </>
@@ -1297,7 +1275,7 @@ export default function App() {
                      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-2 rounded-2xl text-white shadow-lg shadow-indigo-200"><Wand2 size={28}/></div> 
                      Studio Ajaib Foto
                    </h2>
-                   <p className="text-slate-500 font-medium mt-2">Mesin AI pengolah gambar instan. Ganti background, restorasi foto, hingga bikin banner promosi otomatis.</p>
+                   <p className="text-slate-500 font-medium mt-2">Mesin AI pengolah gambar instan. Ganti background, restorasi foto, hingga bikin banner promosi otomatis didukung oleh Imagen 4.</p>
                 </div>
 
                 <div className="flex overflow-x-auto gap-2 pb-2 custom-scrollbar">
@@ -1326,7 +1304,7 @@ export default function App() {
                          </div>
                       ) : (
                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
-                            {photoHistory.map(item => (
+                           {photoHistory.map(item => (
                                <div key={item.id} className="bg-slate-50 rounded-[2rem] border border-slate-200 overflow-hidden group">
                                   <div className="aspect-square bg-slate-100 relative overflow-hidden">
                                      <img src={item.resultImage} alt="Karya AI" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -1340,7 +1318,7 @@ export default function App() {
                                      <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic font-medium">"{item.instruction}"</p>
                                   </div>
                                </div>
-                            ))}
+                           ))}
                          </div>
                       )}
                    </div>
@@ -1867,10 +1845,10 @@ export default function App() {
                   <div className="overflow-x-auto w-full custom-scrollbar">
                     <table className="w-full text-left min-w-[900px]">
                        <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          <tr><th className="px-8 py-5">Invoice & User</th><th className="px-8 py-5">Data Konfirmasi</th><th className="px-8 py-5">Tagihan</th><th className="px-8 py-5 text-center">Aksi</th></tr>
+                         <tr><th className="px-8 py-5">Invoice & User</th><th className="px-8 py-5">Data Konfirmasi</th><th className="px-8 py-5">Tagihan</th><th className="px-8 py-5 text-center">Aksi</th></tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {transactions.filter(t => t.status==='pending').map(t => (
+                         {transactions.filter(t => t.status==='pending').map(t => (
                             <tr key={t.id}>
                                <td className="px-8 py-6"><p className="font-black text-slate-900 text-sm">{t.userName}</p><p className="text-[10px] text-slate-400 font-mono">{t.id}</p></td>
                                <td className="px-8 py-6"><div className="bg-slate-100 p-3 rounded-xl text-xs font-bold"><p>Pengirim: {t.senderName}</p><p>Bank: {t.senderBank}</p>{t.notes && <p className="mt-1 italic font-medium text-slate-500">Catatan: {t.notes}</p>}</div></td>
@@ -1882,8 +1860,8 @@ export default function App() {
                                   </div>
                                </td>
                             </tr>
-                          ))}
-                          {transactions.filter(t => t.status==='pending').length === 0 && <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Tidak ada transaksi pending.</td></tr>}
+                         ))}
+                         {transactions.filter(t => t.status==='pending').length === 0 && <tr><td colSpan="4" className="text-center py-10 text-slate-400 font-bold">Tidak ada transaksi pending.</td></tr>}
                        </tbody>
                     </table>
                   </div>
@@ -1901,10 +1879,10 @@ export default function App() {
                   <div className="overflow-x-auto w-full custom-scrollbar">
                     <table className="w-full text-left min-w-[900px]">
                        <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          <tr><th className="px-8 py-5">Afiliator</th><th className="px-8 py-5">Data Rekening Tujuan</th><th className="px-8 py-5">Nominal Tarik</th><th className="px-8 py-5 text-center">Tindakan Admin</th></tr>
+                         <tr><th className="px-8 py-5">Afiliator</th><th className="px-8 py-5">Data Rekening Tujuan</th><th className="px-8 py-5">Nominal Tarik</th><th className="px-8 py-5 text-center">Tindakan Admin</th></tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {withdrawals.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
+                         {withdrawals.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(w => (
                             <tr key={w.id} className="hover:bg-slate-50 transition-all">
                                <td className="px-8 py-6"><p className="font-black text-slate-900 text-sm">{w.userName}</p><p className="text-[10px] text-slate-400 mt-1">{new Date(w.createdAt).toLocaleString('id-ID')}</p></td>
                                <td className="px-8 py-6"><p className="font-black text-indigo-600 text-sm">{w.bank}</p><p className="font-mono text-slate-700 font-bold text-xs mt-0.5">{w.accountNo}</p></td>
@@ -1916,7 +1894,7 @@ export default function App() {
                                   </div>
                                </td>
                             </tr>
-                          ))}
+                         ))}
                        </tbody>
                     </table>
                   </div>
@@ -2048,10 +2026,10 @@ export default function App() {
                   <div className="overflow-x-auto w-full custom-scrollbar">
                     <table className="w-full text-left min-w-[900px]">
                        <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          <tr><th className="px-8 py-5">Pemilik Web</th><th className="px-8 py-5">Custom Domain / Status</th><th className="px-8 py-5">Affiliate Link System</th><th className="px-8 py-5 text-center">Aksi</th></tr>
+                         <tr><th className="px-8 py-5">Pemilik Web</th><th className="px-8 py-5">Custom Domain / Status</th><th className="px-8 py-5">Affiliate Link System</th><th className="px-8 py-5 text-center">Aksi</th></tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {allLandingPages.map(lp => (
+                         {allLandingPages.map(lp => (
                             <tr key={lp.id} className="hover:bg-slate-50 transition-colors">
                                <td className="px-8 py-6"><p className="font-black text-slate-900 text-sm">{lp.ownerName}</p></td>
                                <td className="px-8 py-6">
@@ -2065,7 +2043,7 @@ export default function App() {
                                   </div>
                                </td>
                             </tr>
-                          ))}
+                         ))}
                        </tbody>
                     </table>
                   </div>
@@ -2175,16 +2153,29 @@ export default function App() {
           {/* ==================================================== */}
           {activeTab === 'admin_ai_config' && isAdmin && (
             <div className="animate-fadeIn max-w-3xl mx-auto space-y-6">
-                <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Seting API AI Global</h2>
+                <h2 className="text-3xl font-black text-slate-900 font-['Outfit']">Seting Sistem AI Global</h2>
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-xl">
-                   <form onSubmit={handleSaveAiConfig} className="space-y-6">
-                      <div><label className="text-[10px] font-black text-slate-400 uppercase">Provider AI (Wajib Gemini)</label><select className="w-full p-4 border rounded-xl font-bold bg-slate-50" value={aiConfig.provider} onChange={e=>setAiConfig({...aiConfig, provider: e.target.value})}><option value="gemini">Google Gemini AI</option></select></div>
-                      <div><label className="text-[10px] font-black text-slate-400 uppercase flex justify-between"><span>API Key Global (Kosongkan bila sistem Canvas berjalan)</span> <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Dapatkan Key Disini</a></label><input type="password" value={aiConfig.apiKey} onChange={e=>setAiConfig({...aiConfig, apiKey: e.target.value})} className="w-full p-4 border rounded-xl font-bold bg-slate-50 text-sm" placeholder="AIzaSy... (Opsional)" /></div>
-                      <div className="flex gap-4">
-                         <button type="button" onClick={handleTestApiConnection} className="bg-slate-100 text-slate-600 font-black px-8 py-4 rounded-xl flex-1 hover:bg-slate-200">TEST KONEKSI</button>
-                         <button type="submit" className="bg-indigo-600 text-white font-black px-8 py-4 rounded-xl flex-1 hover:bg-indigo-700">SIMPAN PENGATURAN</button>
-                      </div>
-                   </form>
+                    <div className="space-y-6">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Status API Gemini & Imagen</label>
+                            <div className="w-full p-4 border border-emerald-200 rounded-xl font-bold bg-emerald-50 text-emerald-600 flex items-center gap-2 mt-2">
+                                <CheckCircle2 size={20} /> Terintegrasi secara otomatis oleh platform
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Daftar Model Pintar Aktif</label>
+                            <div className="w-full p-5 border border-slate-200 rounded-xl bg-slate-50 mt-2 space-y-2">
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 2.5 Flash Preview</span> <span className="text-xs text-slate-400 ml-auto italic">Teks & Code</span></div>
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className="font-bold text-sm text-slate-700">Imagen 4.0 Generate</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Image</span></div>
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-rose-500"></span><span className="font-bold text-sm text-slate-700">Gemini 2.5 Image Preview</span> <span className="text-xs text-slate-400 ml-auto italic">Image-to-Image</span></div>
+                            </div>
+                        </div>
+                        <div className="flex gap-4 pt-4 border-t border-slate-100">
+                           <button type="button" onClick={handleTestApiConnection} className="bg-slate-900 text-white font-black px-8 py-4 rounded-xl flex-1 hover:bg-indigo-600 transition-all shadow-md">
+                               TEST PING KONEKSI AI
+                           </button>
+                        </div>
+                    </div>
                 </div>
             </div>
           )}
@@ -2231,7 +2222,6 @@ export default function App() {
            <div className="max-w-xl w-full bg-white rounded-[2.5rem] shadow-3xl my-auto p-8 sm:p-12 space-y-6">
               <div className="flex justify-between items-center"><h3 className="text-2xl font-black">{finalPrice > 0 ? 'Final Checkout' : 'Konfirmasi Paket'}</h3><button onClick={()=>{setCheckoutPkg(null);}}><X /></button></div>
               
-              {/* FITUR: Form Input Kupon (FIXED - Sebelumnya Terpotong) */}
               {finalPrice > 0 && (
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                       <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Punya Kode Kupon?</p>
@@ -2253,7 +2243,6 @@ export default function App() {
                      <>
                          <input type="text" placeholder="Nama Pemilik Rekening Pengirim" value={confirmForm.senderName} onChange={e=>setConfirmForm({...confirmForm, senderName: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500" required />
                          <input type="text" placeholder="Bank Asal (Contoh: BCA, Mandiri)" value={confirmForm.senderBank} onChange={e=>setConfirmForm({...confirmForm, senderBank: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500" required />
-                         {/* FIX: Input Notes ditambahkan agar variable confirmForm.notes tidak error */}
                          <input type="text" placeholder="Catatan Tambahan (Opsional)" value={confirmForm.notes} onChange={e=>setConfirmForm({...confirmForm, notes: e.target.value})} className="w-full px-5 py-4 rounded-xl border border-slate-200 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                          <button type="submit" disabled={isProcessingAction.current} className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-emerald-600 transition-all uppercase tracking-widest text-xs flex justify-center items-center gap-2">{isProcessingAction.current ? <Loader2 size={16} className="animate-spin" /> : null} Konfirmasi Pembayaran</button>
                      </>
