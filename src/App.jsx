@@ -297,8 +297,8 @@ export default function App() {
   const callGeminiAPI = async (payload, type = 'text') => {
       const apiKey = aiConfig.apiKey ? aiConfig.apiKey.trim() : "";
       
-      // Khusus Free Tier: Semua pemrosesan teks dan visi dialihkan ke gemini-1.5-flash
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      // Menggunakan model Gemini 2.5 Flash Preview yang terdukung penuh oleh environment
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
       
       const res = await fetchWithRetry(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -871,9 +871,9 @@ export default function App() {
     setApiTestLogs(['Memulai tes diagnostik koneksi API...']);
 
     try {
-       setApiTestLogs(prev => [...prev, 'Menguji Gemini 1.5 Flash (Teks)...']);
+       setApiTestLogs(prev => [...prev, 'Menguji Gemini 2.5 Flash Preview (Teks)...']);
        await callGeminiAPI({ contents: [{ parts: [{ text: "Reply 'OK'" }] }] });
-       setApiTestLogs(prev => [...prev, '✅ Gemini 1.5 Flash (Teks) Berhasil!']);
+       setApiTestLogs(prev => [...prev, '✅ Gemini 2.5 Flash Preview (Teks) Berhasil!']);
        showToast(`Tes selesai: Koneksi API berjalan lancar.`, "success");
     } catch(e) { 
        setApiTestLogs(prev => [...prev, `❌ Gemini Teks Gagal: ${e.message}`]); 
@@ -1912,7 +1912,7 @@ export default function App() {
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase">Daftar Model Pintar Aktif</label>
                             <div className="w-full p-5 border border-slate-200 rounded-xl bg-slate-50 mt-2 space-y-2">
-                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 1.5 Flash</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Text Generation</span></div>
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 2.5 Flash Preview</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Text Generation</span></div>
                             </div>
                         </div>
 
