@@ -47,7 +47,7 @@ const WHATSAPP_ADMIN = "628123456789";
 // PENYEMPURNAAN PAKET & KOMISI DINAMIS
 const TIER_LEVELS = {
   0: { name: 'Free', color: 'text-slate-500', bg: 'bg-slate-100', price: 0, comm: 0.10, desc: 'Akses terbatas untuk member baru', features: ['Akses Modul Dasar', 'Kuis Harian AI', 'Komisi Afiliasi 10%'] },
-  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000, comm: 0.20, desc: 'Cocok untuk individu yang baru memulai', features: ['Akses Studio Ajaib Foto', 'Akses Semua Modul LMS', 'Komisi Afiliasi 20%'] },
+  1: { name: 'Personal', color: 'text-emerald-600', bg: 'bg-emerald-50', price: 99000, comm: 0.20, desc: 'Cocok untuk individu yang baru memulai', features: ['Akses Semua Modul LMS', 'Komisi Afiliasi 20%'] },
   2: { name: 'Business', color: 'text-indigo-600', bg: 'bg-indigo-50', price: 249000, comm: 0.30, desc: 'Untuk profesional dan bisnis berkembang', features: ['Semua Fitur Personal', 'Akses AI Copilot Marketing', 'Ruang Fokus VIP', 'Komisi Afiliasi 30%'] },
   3: { name: 'Agency', color: 'text-amber-600', bg: 'bg-amber-50', price: 499000, comm: 0.40, desc: 'Akses penuh tanpa batas untuk tim & agensi', features: ['Semua Fitur Business', 'Web Replikator Pribadi', 'Akses Katalog Semua File', 'Komisi Afiliasi 40%'] },
   4: { name: 'Ultimate VIP', color: 'text-rose-600', bg: 'bg-rose-50', price: 990000, comm: 0.50, desc: 'Spesial: Kasta Tertinggi Marketer Elit', features: ['Semua Fitur Agency', 'Komisi Afiliasi Maksimal 50%', 'Priority Support Helpdesk', 'Exclusive VIP Badge'] }
@@ -156,16 +156,6 @@ export default function App() {
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState(null);
   const [isQuizProcessing, setIsQuizProcessing] = useState(false);
 
-  // --- Ajaib Foto (Image Studio) States ---
-  const [activePhotoFeature, setActivePhotoFeature] = useState('ucapan');
-  const [photoImages, setPhotoImages] = useState([]);
-  const [photoInstruction, setPhotoInstruction] = useState('');
-  const [isGeneratingPhoto, setIsGeneratingPhoto] = useState(false);
-  const [photoGenStatus, setPhotoGenStatus] = useState('');
-  const [photoResult, setPhotoResult] = useState(null);
-  const [photoHistory, setPhotoHistory] = useState([]);
-  const fileInputRef = useRef(null);
-
   // --- Focus & E-Learning States ---
   const [focusTimeLeft, setFocusTimeLeft] = useState(25 * 60);
   const [isFocusing, setIsFocusing] = useState(false);
@@ -252,7 +242,18 @@ export default function App() {
   // ==========================================
   const showToast = (msg, type = 'success') => { setToast({ show: true, msg, type }); setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3500); };
   const copyToClipboard = (text) => { const el = document.createElement('textarea'); el.value = text; document.body.appendChild(el); el.select(); try { document.execCommand('copy'); showToast("Berhasil disalin ke clipboard!"); } catch(err) { showToast("Gagal menyalin.", "error"); } document.body.removeChild(el); };
-  const downloadImage = (url, filename = 'ajaibfoto-result.jpg') => { const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); };
+  const downloadImage = async (url, filename = 'ajaibfoto-result.jpg') => {
+    try {
+      if (url.startsWith('http')) {
+         const response = await fetch(url);
+         const blob = await response.blob();
+         url = URL.createObjectURL(blob);
+      }
+      const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    } catch (err) {
+      window.open(url, '_blank');
+    }
+  };
   
   const openWhatsAppConfirmation = (data) => {
     const text = `Halo Admin, saya ingin konfirmasi pembayaran.%0A%0APaket: ${data.name}%0AHarga: Rp ${data.price.toLocaleString('id-ID')}%0A%0A_Berikut saya lampirkan bukti transfer:_`;
@@ -296,14 +297,8 @@ export default function App() {
   const callGeminiAPI = async (payload, type = 'text') => {
       const apiKey = aiConfig.apiKey ? aiConfig.apiKey.trim() : "";
       
-      let url = "";
-      if (type === 'text' || type === 'vision') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      } else if (type === 'image_gen') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`;
-      } else if (type === 'image_edit') {
-          url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      }
+      // Khusus Free Tier: Semua pemrosesan teks dan visi dialihkan ke gemini-1.5-flash
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       
       const res = await fetchWithRetry(url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -378,15 +373,6 @@ export default function App() {
         if (d.exists()) { setMyLandingPage(d.data()); if(!isEditingLPRef.current) setEditLPForm(d.data()); } else setMyLandingPage(null);
     }, errHandler);
 
-    const unsubPhotoHistory = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), (s) => {
-        const hData = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
-           const timeA = a.createdAt?.toMillis?.() || new Date(a.createdAt || 0).getTime();
-           const timeB = b.createdAt?.toMillis?.() || new Date(b.createdAt || 0).getTime();
-           return timeB - timeA;
-        });
-        setPhotoHistory(hData);
-    }, errHandler);
-
     const unsubFiles = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'files'), (s) => setFiles(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
     const unsubCoupons = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'coupons'), (s) => setCoupons(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
     const unsubChat = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'globalChat'), (s) => setChatMessages(s.docs.map(d => ({ id: d.id, ...d.data() }))), errHandler);
@@ -430,7 +416,7 @@ export default function App() {
        if (d.exists()) setAiConfig(d.data()); 
     }, errHandler);
 
-    return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubPhotoHistory(); unsubAi(); };
+    return () => { unsubProfile(); unsubFiles(); unsubCoupons(); unsubChat(); unsubModules(); unsubAct(); unsubTrans(); unsubTickets(); unsubWd(); unsubMySite(); adminUnsubRegistry(); adminUnsubLPs(); unsubAi(); };
   }, [user, isAdmin]);
 
   // --- Pomodoro Timer Engine ---
@@ -457,144 +443,10 @@ export default function App() {
        } catch(e) {}
     } else { showToast("Waktu istirahat habis. Saatnya kembali fokus!", "success"); setFocusMode('work'); setFocusTimeLeft(25 * 60); }
   };
+
   const formatTime = (seconds) => { const m = Math.floor(seconds / 60); const s = seconds % 60; return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; };
 
   useEffect(() => { if (activeTab === 'community') chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [sortedChat, activeTab]);
-
-  // ==========================================
-  // LOGIC ACTIONS: AJAIB FOTO (IMAGE STUDIO)
-  // ==========================================
-  const photoPresets = {
-    photoshoot: ["Studio Minimalis dengan pencahayaan dramatis", "Di atas batu karang pantai saat matahari terbenam (Golden Hour)", "Panggung podium marmer dengan aksen daun tropis", "Gaya Cyberpunk dengan lampu neon ungu dan biru"],
-    model: ["Wanita Asia profesional, 25 tahun, memakai jas kantoran elegan, rambut sebahu, tersenyum simpul, latar blur studio", "Pria atletis, memakai pakaian olahraga futuristik, sedang berlari di taman kota pagi hari, pencahayaan sinematik"],
-    edit: ["Ubah warna baju menjadi biru navy yang elegan", "Ubah latar belakang menjadi suasana pegunungan bersalju", "Tambahkan kacamata hitam gaya retro pada wajah"],
-    perbaiki: ["Restorasi foto jadul ini menjadi tajam, detail 8k, dan berwarna alami", "Perjelas wajah yang buram menjadi kualitas kamera studio DSLR", "Hilangkan goresan dan noise, pertahankan keaslian wajah model"],
-    banner: ["Banner promo gaya modern minimalis dengan ruang kosong di kiri untuk teks diskon", "Iklan Instagram post gaya pop-art warna-warni cerah yang menarik perhatian"],
-    ucapan: ["Kartu ucapan Idul Fitri elegan dengan nuansa hijau emerald, ornamen lentera emas, dan siluet masjid", "Kartu ucapan Ramadhan/Lebaran bergaya cat air (watercolor) yang lembut dan estetik"]
-  };
-
-  const getPhotoFeatureTexts = () => {
-    if (activePhotoFeature === 'photoshoot') return { title: 'Unggah Foto Produk', desc: 'Unggah 1 foto produk Anda.', max: 1 };
-    if (activePhotoFeature === 'model') return { title: 'Foto Referensi (Opsional)', desc: 'Bisa kosong. Unggah gambar jika ingin meniru pose.', max: 1 };
-    if (activePhotoFeature === 'edit') return { title: 'Unggah Foto Asli', desc: 'Sistem memproses area edit otomatis!', max: 1 };
-    if (activePhotoFeature === 'perbaiki') return { title: 'Unggah Foto Jadul/Rusak', desc: 'Sistem akan merestorasinya menjadi HD.', max: 1 };
-    if (activePhotoFeature === 'banner') return { title: 'Unggah Foto Objek', desc: 'Sistem akan menyulapnya menjadi banner iklan.', max: 1 };
-    if (activePhotoFeature === 'ucapan') return { title: 'Unggah Foto Subjek', desc: 'Sistem akan menyulapnya menjadi kartu ucapan.', max: 1 };
-    return { title: 'Unggah Gambar (Maks 5)', desc: 'Pilih 2-5 gambar untuk digabungkan.', max: 5 };
-  };
-
-  const compressImage = (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let { width, height } = img;
-          if (width > height) { if (width > 800) { height *= 800 / width; width = 800; } } 
-          else { if (height > 800) { width *= 800 / height; height = 800; } }
-          canvas.width = width; canvas.height = height;
-          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.8)); 
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handlePhotoUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
-    const txts = getPhotoFeatureTexts();
-    if (photoImages.length + files.length > txts.max) return showToast(`Maksimal ${txts.max} gambar.`, "error");
-    const compressed = await Promise.all(files.map(f => compressImage(f)));
-    setPhotoImages(prev => [...prev, ...compressed]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleGeneratePhoto = async () => {
-    if (currentTier < 1 && !isAdmin) return showToast("Akses Ditolak. Minimal lisensi paket Personal.", "error");
-    
-    const txts = getPhotoFeatureTexts();
-    if (photoImages.length === 0 && txts.max > 0 && activePhotoFeature !== 'model') return showToast("Unggah gambar dulu.", "error");
-    if (activePhotoFeature === 'gabung' && photoImages.length < 2) return showToast("Minimal 2 gambar.", "error");
-    if (!photoInstruction.trim()) return showToast("Tulis instruksi.", "error");
-
-    setIsGeneratingPhoto(true); setPhotoResult(null); setPhotoGenStatus('Menganalisis prompt dengan Gemini AI...');
-
-    try {
-      // 1. OLAHKAN PROMPT DENGAN GEMINI TEXT/VISION
-      let textPrompt = `Act as an Expert Prompt Engineer. Rewrite this instruction into a highly detailed, professional english image generation prompt: "${photoInstruction}". `;
-      if (activePhotoFeature === 'gabung') textPrompt += `Make sure the prompt describes merging the core subjects of the uploaded concept.`;
-      else if (activePhotoFeature === 'photoshoot') textPrompt += `Make it a high-end product photoshoot prompt.`;
-      else if (activePhotoFeature === 'model') textPrompt += `Make it a hyper-realistic 8k portrait prompt.`;
-      else if (activePhotoFeature === 'perbaiki') textPrompt += `Make it a prompt describing a perfectly restored, 8k DSLR quality image of the subject.`;
-      else if (activePhotoFeature === 'banner') textPrompt += `Make it a prompt for a high-converting commercial banner.`;
-      textPrompt += ` Output ONLY the final english prompt text. No explanations.`;
-
-      let superPrompt = photoInstruction;
-
-      try {
-          const textParts = [{ text: textPrompt }];
-          if (photoImages.length > 0) {
-              textParts.push(...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } })));
-          }
-          const textData = await callGeminiAPI({ contents: [{ role: "user", parts: textParts }] }, 'vision');
-          superPrompt = textData.candidates?.[0]?.content?.parts?.[0]?.text || photoInstruction;
-      } catch (promptErr) {
-          console.warn("Gagal enhance prompt dengan Gemini, menggunakan prompt asli.", promptErr);
-      }
-      
-      setPhotoGenStatus('Merender gambar secara native dengan Gemini AI...');
-
-      // 2. GENERATE GAMBAR
-      const isTextToImage = photoImages.length === 0;
-      let fullDataUrl = "";
-
-      if (isTextToImage) {
-          const payload = {
-              instances: { prompt: superPrompt },
-              parameters: { sampleCount: 1 }
-          };
-          const imgData = await callGeminiAPI(payload, 'image_gen');
-          const generatedBase64 = imgData.predictions?.[0]?.bytesBase64Encoded;
-          if (!generatedBase64) throw new Error("Gagal merender gambar. Coba variasi kalimat lain.");
-          fullDataUrl = `data:image/png;base64,${generatedBase64}`;
-      } else {
-          const imageParts = [{ text: superPrompt }, ...photoImages.map(img => ({ inlineData: { mimeType: "image/jpeg", data: img.split(',')[1] } }))];
-          const payload = {
-              contents: [{ parts: imageParts }],
-              generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-          };
-          const imgData = await callGeminiAPI(payload, 'image_edit');
-          const generatedBase64 = imgData.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-          if (!generatedBase64) throw new Error("Gagal merender gambar.");
-          fullDataUrl = `data:image/jpeg;base64,${generatedBase64}`;
-      }
-
-      setPhotoResult(fullDataUrl);
-      showToast("Sulap foto berhasil!", "success");
-
-      if (user && fullDataUrl.startsWith('data:')) {
-        try {
-          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'generations'), { feature: activePhotoFeature, instruction: photoInstruction, resultImage: fullDataUrl, createdAt: serverTimestamp() });
-          logActivity(`${userFirstName} membuat mahakarya di AI Studio Foto! 🎨`, 'learn');
-        } catch (e) {
-          console.warn("Gambar berukuran besar tidak disimpan di history Firestore.");
-        }
-      }
-    } catch (err) { 
-      showToast(err.message, "error"); 
-    } finally { 
-      setIsGeneratingPhoto(false); 
-    }
-  };
-
-  const deletePhotoHistory = async (id) => {
-    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'generations', id)); showToast("Karya dihapus."); } catch (e) {}
-  };
-
 
   // ==========================================
   // LOGIC ACTIONS: CORE SYSTEM
@@ -740,7 +592,7 @@ export default function App() {
               }
           }
       };
-      const res = await callGeminiAPI(payload, 'text');
+      const res = await callGeminiAPI(payload);
       const text = res.candidates[0].content.parts[0].text;
       const parsed = JSON.parse(text);
       if(parsed && parsed.q) setAiQuiz(parsed);
@@ -1016,45 +868,18 @@ export default function App() {
 
   const handleTestApiConnection = async () => {
     setIsTestingApi(true);
-    setApiTestLogs(['Memulai tes diagnostik koneksi ke 3 model AI...']);
-    let successCount = 0;
+    setApiTestLogs(['Memulai tes diagnostik koneksi API...']);
 
     try {
-       setApiTestLogs(prev => [...prev, '1. Menguji Gemini 1.5 Flash (Text)...']);
-       await callGeminiAPI({ contents: [{ parts: [{ text: "Reply 'OK'" }] }] }, 'text');
-       setApiTestLogs(prev => [...prev, '✅ Gemini 1.5 Flash (Text) Berhasil!']);
-       successCount++;
-    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Text Gagal: ${e.message}`]); }
-
-    try {
-       setApiTestLogs(prev => [...prev, '2. Menguji Imagen 3.0 (Text-to-Image)...']);
-       await callGeminiAPI({ instances: { prompt: "A small red dot" }, parameters: { sampleCount: 1 } }, 'image_gen');
-       setApiTestLogs(prev => [...prev, '✅ Imagen 3.0 Berhasil!']);
-       successCount++;
+       setApiTestLogs(prev => [...prev, 'Menguji Gemini 1.5 Flash (Teks)...']);
+       await callGeminiAPI({ contents: [{ parts: [{ text: "Reply 'OK'" }] }] });
+       setApiTestLogs(prev => [...prev, '✅ Gemini 1.5 Flash (Teks) Berhasil!']);
+       showToast(`Tes selesai: Koneksi API berjalan lancar.`, "success");
     } catch(e) { 
-       if (e.message.toLowerCase().includes('paid plan') || e.message.toLowerCase().includes('billing')) {
-           setApiTestLogs(prev => [...prev, `⚠️ Imagen Terkunci: API Key Free Tier tidak mendukup fitur pembuatan gambar. Membutuhkan akun billing berbayar.`]);
-       } else {
-           setApiTestLogs(prev => [...prev, `❌ Imagen Gagal: ${e.message}`]); 
-       }
+       setApiTestLogs(prev => [...prev, `❌ Gemini Teks Gagal: ${e.message}`]); 
+       showToast(`Tes selesai: Ada kendala API.`, "error");
     }
-
-    try {
-       setApiTestLogs(prev => [...prev, '3. Menguji Kapabilitas Vision (Image-to-Text)...']);
-       // Base64 gambar 1x1 pixel untuk testing
-       const dummyBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-       await callGeminiAPI({
-          contents: [{ parts: [{text: "Describe this image in 1 word"}, { inlineData: { mimeType: "image/png", data: dummyBase64 } }] }]
-       }, 'vision');
-       setApiTestLogs(prev => [...prev, '✅ Gemini Vision Berhasil!']);
-       successCount++;
-    } catch(e) { setApiTestLogs(prev => [...prev, `❌ Gemini Vision Gagal: ${e.message}`]); }
-
-    if (successCount >= 1) {
-       showToast(`Tes selesai: ${successCount} fungsi berjalan.`, "success");
-    } else {
-       showToast(`Tes selesai: Koneksi Gagal Semua.`, "error");
-    }
+    
     setIsTestingApi(false);
   };
 
@@ -1228,8 +1053,7 @@ export default function App() {
               <NavBtn active={activeTab==='dashboard'} onClick={()=>{setActiveTab('dashboard'); closeSidebarMobile();}} icon={<LayoutDashboard size={20} />} label="Dashboard Utama" />
               
               <div className="my-4 border-b border-slate-100"></div>
-              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-4 px-4 mt-2">Studio Kreatif AI</p>
-              <NavBtn active={activeTab==='ai_studio'} onClick={()=>{setActiveTab('ai_studio'); closeSidebarMobile();}} icon={<Wand2 size={20} />} label="Studio Ajaib Foto" />
+              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-4 px-4 mt-2">Alat Marketing AI</p>
               <NavBtn active={activeTab==='copilot'} onClick={()=>{setActiveTab('copilot'); closeSidebarMobile();}} icon={<Rocket size={20} />} label="Marketing Copilot AI" />
               
               <div className="my-4 border-b border-slate-100"></div>
@@ -1295,10 +1119,10 @@ export default function App() {
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-black font-['Outfit'] tracking-tight leading-tight">Halo, {userFirstName}! 👋</h2>
                       <p className={`text-base max-w-xl mx-auto lg:mx-0 leading-relaxed ${currentTier >= 4 ? 'text-rose-100' : 'text-slate-400'}`}>
-                        Akses modul interaktif di ProSpace Academy dan gunakan Ajaib Foto Studio untuk meroketkan bisnis digital Anda hari ini.
+                        Akses modul interaktif di ProSpace Academy dan gunakan AI Marketing Copilot untuk meroketkan bisnis digital Anda hari ini.
                       </p>
                       <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
-                         <button onClick={()=>setActiveTab('ai_studio')} className="w-full sm:w-auto bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"><Wand2 size={18} /> BUKA STUDIO AJAIB</button>
+                         <button onClick={()=>setActiveTab('copilot')} className="w-full sm:w-auto bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:scale-105 transition-all text-sm flex items-center justify-center gap-2"><Rocket size={18} /> BUKA AI COPILOT</button>
                       </div>
                     </div>
                   </div>
@@ -1311,139 +1135,6 @@ export default function App() {
                   <StatCard label="Saldo Komisi" val={`Rp ${affiliateBalance.toLocaleString('id-ID')}`} icon={<Wallet size={28} />} color="amber" />
                 </div>
             </div>
-          )}
-
-          {/* ==================================================== */}
-          {/* TAB: AJAIB FOTO STUDIO */}
-          {/* ==================================================== */}
-          {activeTab === 'ai_studio' && !isAdmin && (
-             currentTier < 1 ? <FeatureLockScreen title="Studio Ajaib Foto" reqTier={1} /> :
-             <div className="animate-fadeIn space-y-6">
-                <div className="mb-6">
-                   <h2 className="text-3xl sm:text-4xl font-black text-slate-900 font-['Outfit'] tracking-tight flex items-center gap-3">
-                     <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-2 rounded-2xl text-white shadow-lg shadow-indigo-200"><Wand2 size={28}/></div> 
-                     Studio Ajaib Foto
-                   </h2>
-                   <p className="text-slate-500 font-medium mt-2">Mesin AI pengolah gambar instan. Ganti background, restorasi foto, hingga bikin banner promosi otomatis didukung oleh Imagen 4.</p>
-                </div>
-
-                <div className="flex overflow-x-auto gap-2 pb-2 custom-scrollbar">
-                   {[
-                      { id: 'ucapan', label: 'Kartu Ucapan', icon: Gift },
-                      { id: 'banner', label: 'Bikin Banner', icon: Megaphone },
-                      { id: 'perbaiki', label: 'Perbaiki Foto', icon: Wrench },
-                      { id: 'edit', label: 'Edit Foto', icon: Paintbrush },
-                      { id: 'model', label: 'Buat Model AI', icon: User },
-                      { id: 'photoshoot', label: 'Photoshoot', icon: Camera },
-                      { id: 'gabung', label: 'Gabung Foto', icon: Layers },
-                      { id: 'gallery', label: 'Galeri Saya', icon: ImageIcon }
-                   ].map(item => (
-                     <button key={item.id} onClick={() => { setActivePhotoFeature(item.id); setPhotoImages([]); setPhotoInstruction(''); setPhotoResult(null); }} className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-sm transition-all whitespace-nowrap border-2 ${activePhotoFeature === item.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-xl shadow-indigo-100' : 'bg-white text-slate-500 border-slate-100 hover:border-indigo-200 hover:text-indigo-600'}`}>
-                        <item.icon size={16} /> {item.label}
-                     </button>
-                   ))}
-                </div>
-
-                {activePhotoFeature === 'gallery' ? (
-                   <div className="bg-white rounded-[3rem] border border-slate-200 p-8 shadow-xl min-h-[500px]">
-                      {photoHistory.length === 0 ? (
-                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                           <ImageIcon size={64} className="mb-4 opacity-30" />
-                           <p className="font-bold">Belum ada karya yang disimpan. Buat sekarang!</p>
-                         </div>
-                      ) : (
-                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
-                           {photoHistory.map(item => (
-                               <div key={item.id} className="bg-slate-50 rounded-[2rem] border border-slate-200 overflow-hidden group">
-                                  <div className="aspect-square bg-slate-100 relative overflow-hidden">
-                                     <img src={item.resultImage} alt="Karya AI" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                     <div className="absolute inset-0 bg-slate-900 bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 gap-3">
-                                        <button onClick={()=>downloadImage(item.resultImage)} className="p-3 bg-white text-indigo-600 rounded-xl hover:bg-indigo-50"><Download size={18}/></button>
-                                        <button onClick={()=>deletePhotoHistory(item.id)} className="p-3 bg-rose-500 text-white rounded-xl hover:bg-rose-600"><Trash2 size={18}/></button>
-                                     </div>
-                                  </div>
-                                  <div className="p-4">
-                                     <span className="text-[9px] font-black uppercase bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full">{item.feature}</span>
-                                     <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic font-medium">"{item.instruction}"</p>
-                                  </div>
-                               </div>
-                           ))}
-                         </div>
-                      )}
-                   </div>
-                ) : (
-                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                      <div className="lg:col-span-5 space-y-6">
-                         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-xl">
-                            <div className="flex justify-between items-center mb-4">
-                               <h3 className="font-black text-slate-800 text-lg">{getPhotoFeatureTexts().title}</h3>
-                               {activePhotoFeature !== 'model' && <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-full">{photoImages.length} / {getPhotoFeatureTexts().max}</span>}
-                            </div>
-                            <p className="text-xs text-slate-500 font-medium mb-6">{getPhotoFeatureTexts().desc}</p>
-                            
-                            {photoImages.length > 0 && (
-                               <div className="grid grid-cols-2 gap-4 mb-6">
-                                  {photoImages.map((img, i) => (
-                                     <div key={i} className="aspect-square rounded-2xl border border-slate-200 relative overflow-hidden group">
-                                        <img src={img} className="w-full h-full object-cover" />
-                                        <button onClick={() => setPhotoImages(photoImages.filter((_, idx)=>idx!==i))} className="absolute top-2 right-2 p-1.5 bg-rose-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-md"><X size={14}/></button>
-                                     </div>
-                                  ))}
-                               </div>
-                            )}
-
-                            {photoImages.length < getPhotoFeatureTexts().max && (
-                               <div onClick={()=>fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all">
-                                  <div className="bg-white p-3 rounded-xl shadow-sm mb-3"><Upload size={24} className="text-indigo-400"/></div>
-                                  <p className="text-xs font-bold text-slate-600">Klik untuk upload foto (JPG/PNG)</p>
-                                  <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/jpeg, image/png" multiple={activePhotoFeature==='gabung'} className="hidden" />
-                               </div>
-                            )}
-                         </div>
-
-                         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-xl">
-                            <h3 className="font-black text-slate-800 text-lg mb-4">Instruksi AI (Prompt)</h3>
-                            {activePhotoFeature !== 'gabung' && (
-                               <div className="flex flex-wrap gap-2 mb-4">
-                                  {(photoPresets[activePhotoFeature] || photoPresets['edit']).map((preset, idx) => (
-                                     <button key={idx} onClick={()=>setPhotoInstruction(preset)} className="text-[10px] font-bold bg-slate-50 border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-1.5 rounded-full transition-all text-left line-clamp-1 max-w-full">{preset}</button>
-                                  ))}
-                               </div>
-                            )}
-                            <textarea value={photoInstruction} onChange={e=>setPhotoInstruction(e.target.value)} placeholder="Deskripsikan dengan jelas apa yang ingin Anda buat atau ubah pada foto..." className="w-full h-32 px-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium resize-none custom-scrollbar" />
-                            
-                            <button onClick={handleGeneratePhoto} disabled={isGeneratingPhoto || (activePhotoFeature==='gabung' && photoImages.length<2) || (['photoshoot','edit','perbaiki','banner','ucapan'].includes(activePhotoFeature) && photoImages.length<1) || !photoInstruction.trim()} className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black py-4 rounded-2xl shadow-xl hover:scale-105 transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:scale-100">
-                               {isGeneratingPhoto ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />}
-                               {isGeneratingPhoto ? 'MEMPROSES AI...' : 'SULAP SEKARANG'}
-                            </button>
-                         </div>
-                      </div>
-
-                      <div className="lg:col-span-7 bg-white rounded-[3rem] border border-slate-200 p-8 shadow-xl flex flex-col min-h-[600px]">
-                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-black text-slate-800 text-lg flex items-center gap-2"><ImageIcon className="text-indigo-500" size={20}/> Kanvas Hasil</h3>
-                            {photoResult && <button onClick={()=>downloadImage(photoResult)} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase flex items-center gap-1 hover:bg-indigo-100"><Download size={14}/> Download HD</button>}
-                         </div>
-                         <div className="flex-1 bg-slate-50 rounded-[2rem] border border-slate-100 relative overflow-hidden flex items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
-                            {isGeneratingPhoto ? (
-                               <div className="flex flex-col items-center text-center p-8">
-                                  <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
-                                  <h4 className="font-black text-slate-800 text-lg">{photoGenStatus}</h4>
-                                  <p className="text-xs font-bold text-slate-400 mt-2 max-w-xs">Dual-Model AI Engine sedang bekerja memproses resolusi tinggi...</p>
-                               </div>
-                            ) : photoResult ? (
-                               <img src={photoResult} alt="Hasil AI" className="w-full h-full object-contain p-4" />
-                            ) : (
-                               <div className="flex flex-col items-center text-slate-300">
-                                  <Paintbrush size={64} className="mb-4 opacity-50" />
-                                  <p className="font-bold text-sm">Area preview kosong. Mulai instruksikan AI di sebelah kiri.</p>
-                               </div>
-                            )}
-                         </div>
-                      </div>
-                   </div>
-                )}
-             </div>
           )}
 
           {/* ==================================================== */}
@@ -2221,8 +1912,7 @@ export default function App() {
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase">Daftar Model Pintar Aktif</label>
                             <div className="w-full p-5 border border-slate-200 rounded-xl bg-slate-50 mt-2 space-y-2">
-                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 1.5 Flash</span> <span className="text-xs text-slate-400 ml-auto italic">Teks & Vision Analysis</span></div>
-                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className="font-bold text-sm text-slate-700">Imagen 3.0 Generate</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Image (Membutuhkan Paid Tier)</span></div>
+                                <div className="flex items-center gap-3"><span className="w-2 h-2 rounded-full bg-indigo-500"></span><span className="font-bold text-sm text-slate-700">Gemini 1.5 Flash</span> <span className="text-xs text-slate-400 ml-auto italic">Text-to-Text Generation</span></div>
                             </div>
                         </div>
 
